@@ -1,2 +1,3 @@
 # iemgrid
-IEM Gridded Analysis
+
+IEM Gridded Analysis code in support of sponsored work by NTRANS.
