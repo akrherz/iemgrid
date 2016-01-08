@@ -1,3 +1,16 @@
+
+ 07 Jan 2016
+----------- 
+ - Mike Fowle (DMX SOO) showed a decision support tool for winter wx
+   http://weather.gov/wrh/tavel/?wfo=sds
+ - It was noted that currently $400b in freight crosses Iowa each year
+ - An email list will be established to support this group's work
+ - Primary focus is initial investigations on Interstates
+ - DOT has an advisory speed project whereby signs will note to slow down
+ - Fowle noted that lots of accidents in SD happen in Nov due to deer
+ - daryl is the slow cog
+ - Arujn has some image processing stuff with deep learning
+ 
 12 Nov 2015
 -----------
 - Discussion of the data format and other aux issues
