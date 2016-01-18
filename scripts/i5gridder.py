@@ -1,5 +1,5 @@
 """The wx gridder!
-  [ ] "wawa"     Gridded NWS Watch Warning Advisory codes
+  [o] "wawa"     Gridded NWS Watch Warning Advisory codes
   [ ] "ptype"    Precip type (int flag) -> MRMS
   [o] "tmpc"     2m Air Temperature
   [o] "dwpc"     2m Dew Point
@@ -23,13 +23,16 @@ import psycopg2
 from pandas.io.sql import read_sql
 from scipy.interpolate import NearestNDInterpolator
 from pyiem.datatypes import temperature, speed, distance
+from geopandas import GeoDataFrame
+from rasterio import features
+from rasterio.transform import Affine
 
 
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
 PROGRAM_VERSION = 0.1
-DOMAIN = {'wawa': {'units': '1', 'format': '%i'},
+DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
           'dwpc': {'units': 'C', 'format': '%.2f'},
@@ -40,6 +43,56 @@ DOMAIN = {'wawa': {'units': '1', 'format': '%i'},
           'srad': {'units': 'Wm*{-2}', 'format': '%.2f'},
           'snwd': {'units': 'mm', 'format': '%.2f'}
           }
+# This is not used at the moment
+WWA_CODES = {
+ 'AS.Y': 5,  # Air Stagnation Advisory
+ 'EH.A': 6,  # Excessive Heat Watch
+
+ 'EC.W': 50,  # Extreme Cold Warning
+ 'FA.A': 51,  # Areal Flood Watch
+ 'EH.W': 52,  # Excessive Heat Warning
+ 'HT.Y': 53,  # Heat Advisory
+ 'FZ.W': 54,  # Freeze Warning
+ 'FR.Y': 55,  # Freeze Advisory
+ 'FW.A': 56,  # Fire Weather Watch
+ 'FW.W': 57,  # Fire Weather Warning
+ 'FZ.A': 58,  # Freeze Watch
+
+ 'HZ.W': 129,  # Hard Freeze Warning
+ 'WS.A': 130,  # Winter Storm Watch
+ 'BZ.A': 140,  # Blizzard Watch
+ 'SV.A': 145,  # Severe Thunderstorm Watch
+ 'TO.A': 146,  # Tornado Watch
+ 'FL.A': 147,  # Flood Watch
+ 'FL.S': 148,  # Flood Statement
+ 'WC.A': 149,  # Wind Chill Watch
+ 'FL.Y': 150,  # Flood Advisory
+
+ 'HW.A': 167,  # High Wind Watch
+ 'WC.W': 168,  # Wind Chill Warning
+ 'FL.W': 169,  # Flood Warning
+ 'BS.Y': 170,  # Blowing Snow Advisory
+ 'WI.Y': 171,  # Wind Advisory
+ 'WC.Y': 172,  # Wind Chill Advisory
+ 'FA.W': 173,  # Areal Flood Warning
+ 'FA.Y': 174,  # Areal Flood Advisory
+ 'FF.A': 175,  # Flas Flood Advisory
+ 'FF.W': 176,  # Flash Flood Warning
+ 'FG.Y': 177,  # Fog Advisory
+
+ 'HW.W': 224,  # High Wind Warning
+ 'SN.Y': 225,  # Snow Advisory
+ 'SB.Y': 226,  # Snow and Blowing Snow Advisory
+ 'WW.Y': 227,  # Winter Weather Advisory
+ 'SV.W': 228,  # Severe Thunderstorm Warning
+ 'HS.W': 229,  # Heavy Snow Warning
+ 'WS.W': 230,  # Winter Storm Warning
+ 'ZF.Y': 231,  # Freezing Fog Advisory
+ 'ZR.Y': 232,  # Freezing Rain Advisory
+ 'BZ.W': 240,  # Blizzard Warning
+ 'TO.W': 241,  # Tornado Warning
+ 'IS.W': 242,  # Ice Storm Warning
+ }
 
 
 def write_grids(grids, valid):
@@ -88,9 +141,43 @@ def init_grids():
     """Create the grids, please"""
     grids = {}
     for label in DOMAIN:
-        grids[label] = np.zeros((324, 660), np.float32)
+        if label == 'wawa':
+            grids[label] = np.chararray((324, 660))
+            grids[label][:] = ''
+        else:
+            grids[label] = np.zeros((324, 660), np.float32)
 
     return grids
+
+
+def transform_from_corner(ulx, uly, dx, dy):
+    return Affine.translation(ulx, uly)*Affine.scale(dx, -dy)
+
+
+def wwa(grids, valid):
+    """An attempt at rasterizing the WWA"""
+    pgconn = psycopg2.connect(database='postgis', host='iemdb', user='nobody')
+    table = "warnings_%s" % (valid.year, )
+    df = GeoDataFrame.from_postgis("""
+        SELECT geom as geom, phenomena ||'.'|| significance as code, w.ugc from
+        """ + table + """ w JOIN ugcs u on (w.gid = u.gid) WHERE
+        issue < %s and expire > %s
+        and w.wfo in ('FSD', 'ARX', 'DVN', 'DMX', 'EAX', 'FSD', 'OAX', 'MPX')
+    """, pgconn, params=(valid, valid), index_col=None)
+    transform = transform_from_corner(reference.IA_WEST, reference.IA_NORTH,
+                                      0.01, 0.01)
+    df['i'] = 1
+    for vtec in df['code'].unique():
+        df2 = df[df['code'] == vtec]
+        shapes = ((geom, value) for geom, value in zip(df2.geometry, df2.i))
+        stradd = "%s," % (vtec,)
+        arr = features.rasterize(shapes=shapes, fill=0, transform=transform,
+                                 out_shape=grids['wawa'].shape)
+        shp = grids['wawa'].shape
+        for i in range(shp[0]):
+            for j in range(shp[1]):
+                if arr[i, j] > 0:
+                    grids['wawa'][i, j] = grids['wawa'][i, j] + stradd
 
 
 def simple(grids, valid):
@@ -126,6 +213,7 @@ def run(valid):
     """Run for this timestamp (UTC)"""
     grids = init_grids()
     simple(grids, valid)
+    wwa(grids, valid)
     write_grids(grids, valid)
 
 
