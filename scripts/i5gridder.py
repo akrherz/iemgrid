@@ -122,6 +122,7 @@ def write_grids(grids, valid):
                 out.write(fmt % (i, thisgrid[row, col]))
                 i += 1
             out.write("\n")
+        out.write("</variable></wx>")
         out.close()
     # Create a zipfile of this collection
     zipfn = "/tmp/wx_%s.zip" % (valid.strftime("%Y%m%d%H%M"), )
