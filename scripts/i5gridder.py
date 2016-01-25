@@ -1,6 +1,6 @@
 """The wx gridder!
   [o] "wawa"     Gridded NWS Watch Warning Advisory codes
-  [ ] "ptype"    Precip type (int flag) -> MRMS
+  [o] "ptype"    Precip type (int flag) -> MRMS
   [o] "tmpc"     2m Air Temperature
   [o] "dwpc"     2m Dew Point
   [o] "smps"     10m Wind Speed
@@ -9,6 +9,7 @@
   [ ] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
   [ ] "srad"     Solar Radiation (2014 onward)
   [ ] "snwd"     Snow Depth would be once per day
+  [o] "pcpn"     Precipitation
 """
 import sys
 import datetime
@@ -16,6 +17,9 @@ import pytz
 import os
 import socket
 import shutil
+import gzip
+import pygrib
+import tempfile
 import zipfile
 import numpy as np
 from pyiem import reference
@@ -31,7 +35,7 @@ from rasterio.transform import Affine
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.1
+PROGRAM_VERSION = 0.2
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -41,7 +45,8 @@ DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'vsby': {'units': 'km', 'format': '%.3f'},
           'roadtmpc': {'units': 'C', 'format': '%.2f'},
           'srad': {'units': 'Wm*{-2}', 'format': '%.2f'},
-          'snwd': {'units': 'mm', 'format': '%.2f'}
+          'snwd': {'units': 'mm', 'format': '%.2f'},
+          'pcpn': {'units': 'mm', 'format': '%.2f'}
           }
 # This is not used at the moment
 WWA_CODES = {
@@ -210,11 +215,81 @@ def simple(grids, valid):
     grids['vsby'] = nn(XI, YI)
 
 
+def ptype(grids, valid):
+    """Attempt to use MRMS ptype here"""
+    fn = None
+    i = 0
+    while i < 10:
+        ts = valid - datetime.timedelta(minutes=i)
+        testfn = ts.strftime(("/mnt/a4/data/%Y/%m/%d/mrms/ncep/PrecipFlag/"
+                              "PrecipFlag_00.00_%Y%m%d-%H%M00.grib2.gz"))
+        if os.path.isfile(testfn):
+            fn = testfn
+            break
+        i += 1
+    if fn is None:
+        return
+
+    fp = gzip.GzipFile(fn, 'rb')
+    (_, tmpfn) = tempfile.mkstemp()
+    tmpfp = open(tmpfn, 'wb')
+    tmpfp.write(fp.read())
+    tmpfp.close()
+    grbs = pygrib.open(tmpfn)
+    grb = grbs[1]
+    os.unlink(tmpfn)
+
+    # 3500, 7000, starts in upper left
+    top = int((55. - reference.IA_NORTH) * 100.)
+    bottom = int((55. - reference.IA_SOUTH) * 100.)
+
+    right = int((reference.IA_EAST - -130.) * 100.) - 1
+    left = int((reference.IA_WEST - -130.) * 100.)
+
+    grids['ptype'] = np.flipud(grb['values'][top:bottom, left:right])
+
+
+def pcpn(grids, valid):
+    """Attempt to use MRMS pcpn here"""
+    fn = None
+    i = 0
+    while i < 10:
+        ts = valid - datetime.timedelta(minutes=i)
+        testfn = ts.strftime(("/mnt/a4/data/%Y/%m/%d/mrms/ncep/PrecipRate/"
+                              "PrecipRate_00.00_%Y%m%d-%H%M00.grib2.gz"))
+        if os.path.isfile(testfn):
+            fn = testfn
+            break
+        i += 1
+    if fn is None:
+        return
+    fp = gzip.GzipFile(fn, 'rb')
+    (_, tmpfn) = tempfile.mkstemp()
+    tmpfp = open(tmpfn, 'wb')
+    tmpfp.write(fp.read())
+    tmpfp.close()
+    grbs = pygrib.open(tmpfn)
+    grb = grbs[1]
+    os.unlink(tmpfn)
+
+    # 3500, 7000, starts in upper left
+    top = int((55. - reference.IA_NORTH) * 100.)
+    bottom = int((55. - reference.IA_SOUTH) * 100.)
+
+    right = int((reference.IA_EAST - -130.) * 100.) - 1
+    left = int((reference.IA_WEST - -130.) * 100.)
+
+    # two minute accumulation is in mm/hr / 60 * 5
+    grids['pcpn'] = np.flipud(grb['values'][top:bottom, left:right]) * 12.0
+
+
 def run(valid):
     """Run for this timestamp (UTC)"""
     grids = init_grids()
     simple(grids, valid)
     wwa(grids, valid)
+    ptype(grids, valid)
+    pcpn(grids, valid)
     write_grids(grids, valid)
 
 
