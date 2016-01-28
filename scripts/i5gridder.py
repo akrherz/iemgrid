@@ -4,7 +4,7 @@
   [o] "tmpc"     2m Air Temperature
   [o] "dwpc"     2m Dew Point
   [o] "smps"     10m Wind Speed
-  [ ] "drct"     10m Wind Direction (no u/v components)
+  [o] "drct"     10m Wind Direction (no u/v components)
   [o] "vsby"     Visibility, understanding that I can't go down below 1/8 mile
   [ ] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
   [ ] "srad"     Solar Radiation (2014 onward)
@@ -26,16 +26,17 @@ from pyiem import reference
 import psycopg2
 from pandas.io.sql import read_sql
 from scipy.interpolate import NearestNDInterpolator
-from pyiem.datatypes import temperature, speed, distance
+from pyiem.datatypes import temperature, speed, distance, direction
 from geopandas import GeoDataFrame
 from rasterio import features
 from rasterio.transform import Affine
+from pyiem import meteorology
 
 
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.2
+PROGRAM_VERSION = 0.3
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -195,7 +196,8 @@ def simple(grids, valid):
         from current c JOIN stations t on (c.iemid = t.iemid)
         WHERE c.valid > now() - '1 hour'::interval and
         t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
-        'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS')
+        'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
+        and drct is not null
         """, pgconn, index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
@@ -209,6 +211,19 @@ def simple(grids, valid):
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                speed(df['sknt'].values, 'KT').value('MPS'))
     grids['smps'] = nn(XI, YI)
+
+    u, v = meteorology.uv(speed(df['sknt'].values, 'KT'),
+                          direction(df['drct'].values, 'DEG'))
+    nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
+                               u.value('MPS'))
+    ugrid = nn(XI, YI)
+    nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
+                               v.value('MPS'))
+    vgrid = nn(XI, YI)
+    drct = meteorology.drct(speed(ugrid.ravel(), 'MPS'),
+                            speed(vgrid.ravel(), 'MPS')
+                            ).value('DEG').astype('i')
+    grids['drct'] = np.reshape(drct, (len(YAXIS), len(XAXIS)))
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                distance(df['vsby'].values, 'MI').value('KM'))
