@@ -6,9 +6,9 @@
   [o] "smps"     10m Wind Speed
   [o] "drct"     10m Wind Direction (no u/v components)
   [o] "vsby"     Visibility, understanding that I can't go down below 1/8 mile
-  [ ] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
-  [ ] "srad"     Solar Radiation (2014 onward)
-  [ ] "snwd"     Snow Depth would be once per day
+  [o] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
+  [o] "srad"     Solar Radiation (2014 onward)
+  [o] "snwd"     Snow Depth would be once per day
   [o] "pcpn"     Precipitation
 """
 import sys
@@ -36,7 +36,7 @@ from pyiem import meteorology
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.3
+PROGRAM_VERSION = 0.4
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -187,6 +187,58 @@ def wwa(grids, valid):
                     grids['wawa'][i, j] = grids['wawa'][i, j] + stradd
 
 
+def snowd(grids, valid):
+    """ Do the snowdepth grid"""
+    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+    df = read_sql("""
+        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+        max(snowd) as snow
+        from summary s JOIN stations t on (s.iemid = t.iemid)
+        WHERE s.day in ('TODAY', 'YESTERDAY') and
+        t.network in ('IA_COOP', 'MN_COOP', 'WI_COOP', 'IL_COOP',
+        'MO_COOP', 'NE_COOP', 'KS_COOP', 'SD_COOP') and snowd >= 0
+        and snowd < 100 GROUP by lon, lat
+        """, pgconn, index_col=None)
+
+    nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
+                               distance(df['snow'].values, 'IN').value('MM'))
+    grids['snwd'] = nn(XI, YI)
+
+
+def roadtmpc(grids, valid):
+    """ Do the RWIS Road times grid"""
+    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+    df = read_sql("""
+        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+        tsf0
+        from current c JOIN stations t on (c.iemid = t.iemid)
+        WHERE c.valid > now() - '2 hours'::interval and
+        t.network in ('IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS', 'MO_RWIS',
+        'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
+        and tsf0 < 150
+        """, pgconn, index_col=None)
+
+    nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
+                               temperature(df['tsf0'].values, 'F').value('C'))
+    grids['roadtmpc'] = nn(XI, YI)
+
+
+def srad(grids, valid):
+    """ Do the RWIS Road times grid"""
+    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+    df = read_sql("""
+        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+        srad
+        from current c JOIN stations t on (c.iemid = t.iemid)
+        WHERE c.valid > now() - '2 hours'::interval and
+        t.network in ('ISUSM') and srad >= 0
+        """, pgconn, index_col=None)
+
+    nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
+                               df['srad'].values)
+    grids['srad'] = nn(XI, YI)
+
+
 def simple(grids, valid):
     """Simple gridder (stub for now)"""
     pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
@@ -305,6 +357,9 @@ def run(valid):
     wwa(grids, valid)
     ptype(grids, valid)
     pcpn(grids, valid)
+    snowd(grids, valid)
+    roadtmpc(grids, valid)
+    srad(grids, valid)
     write_grids(grids, valid)
 
 
