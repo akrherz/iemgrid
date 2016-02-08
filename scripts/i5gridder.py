@@ -36,7 +36,7 @@ from pyiem import meteorology
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.4
+PROGRAM_VERSION = 0.5
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -103,39 +103,39 @@ WWA_CODES = {
 
 def write_grids(grids, valid):
     """Do the write to disk"""
-    fns = []
-    for label in grids:
-        thisgrid = grids[label]
-        fmt = '<cell gid="%s">' + DOMAIN[label]['format'] + '</cell>'
-        fn = "/tmp/%s_%s.xml" % (label, valid.strftime("%Y%m%d%H%M"))
-        fns.append(fn)
-        out = open(fn, 'w')
-        out.write("""<?xml version="1.0" encoding="UTF-8"?>
-<wx>
-<title>IEM Weather Grid</title>
-<metadata>
-  <time>%s</time>
-  <revision>%s</revision>
-  <hostname>%s</hostname>
-</metadata>
-<variable name="%s" units="%s" type="analysis" valid="%s">
-""" % (valid.strftime("%Y-%m-%dT%H:%M:%SZ"), PROGRAM_VERSION,
-                  socket.gethostname(), label, DOMAIN[label]['units'],
-                  valid.strftime("%Y-%m-%dT%H:%M:%SZ")))
-        i = 1
-        for row in range(len(YAXIS)):
-            for col in range(len(XAXIS)):
-                out.write(fmt % (i, thisgrid[row, col]))
-                i += 1
-            out.write("\n")
-        out.write("</variable></wx>")
-        out.close()
+    fn = "/tmp/%s.json" % (valid.strftime("%Y%m%d%H%M"), )
+    out = open(fn, 'w')
+    out.write("""{"time": "%s",
+    "type": "analysis",
+    "revision": "%s",
+    "hostname": "%s",
+    "data": [
+    """ % (valid.strftime("%Y-%m-%dT%H:%M:%SZ"),
+           PROGRAM_VERSION, socket.gethostname()))
+    fmt = ('{"gid": %s, "tmpc": %.2f, "wawa": %s, "ptype": %i, "dwpc": %.2f, '
+           '"smps": %.1f, "drct": %i, "vsby": %.3f, "roadtmpc": %.2f,'
+           '"srad": %.2f, "snwd": %.2f, "pcpn": %.2f}')
+    i = 1
+    ar = []
+    for row in range(len(YAXIS)):
+        for col in range(len(XAXIS)):
+            ar.append(fmt % (i, grids['tmpc'][row, col],
+                             repr(grids['wawa'][row, col][:-1].split(
+                                                    ",")).replace("'", '"'),
+                             grids['ptype'][row, col], grids['dwpc'][row, col],
+                             grids['smps'][row, col], grids['drct'][row, col],
+                             grids['vsby'][row, col],
+                             grids['roadtmpc'][row, col],
+                             grids['srad'][row, col], grids['snwd'][row, col],
+                             grids['pcpn'][row, col]))
+            i += 1
+    out.write(",\n".join(ar))
+    out.write("]}\n")
     # Create a zipfile of this collection
     zipfn = "/tmp/wx_%s.zip" % (valid.strftime("%Y%m%d%H%M"), )
     z = zipfile.ZipFile(zipfn, 'w', zipfile.ZIP_DEFLATED)
-    for fn in fns:
-        z.write(fn, fn.split("/")[-1])
-        os.unlink(fn)
+    z.write(fn, fn.split("/")[-1])
+    os.unlink(fn)
     z.close()
     # move to cache folder
     shutil.copyfile(zipfn,
@@ -149,7 +149,7 @@ def init_grids():
     grids = {}
     for label in DOMAIN:
         if label == 'wawa':
-            grids[label] = np.chararray((324, 660))
+            grids[label] = np.chararray((324, 660), itemsize=25)
             grids[label][:] = ''
         else:
             grids[label] = np.zeros((324, 660), np.float32)
@@ -249,7 +249,8 @@ def simple(grids, valid):
         WHERE c.valid > now() - '1 hour'::interval and
         t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
         'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
-        and drct is not null
+        and drct is not null and tmpf is not null and dwpf is not null
+        and vsby is not null
         """, pgconn, index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
