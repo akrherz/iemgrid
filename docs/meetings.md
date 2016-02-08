@@ -1,3 +1,11 @@
+04 Feb 2016
+-----------
+ - A new format was proferred with it being JSON, we worked through an example
+ - They want individual forecast hours in a single file
+ - They suggested having the archive data in CSV and current, future in JSON
+ - An issue of having excessive zeros in the file was mentioned, I am unsure of
+   it and asked to see an example
+ - Some Aurora projects were discussed, but they were outside of my area.
 
  07 Jan 2016
 ----------- 
