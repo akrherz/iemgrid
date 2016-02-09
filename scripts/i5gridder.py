@@ -31,12 +31,13 @@ from geopandas import GeoDataFrame
 from rasterio import features
 from rasterio.transform import Affine
 from pyiem import meteorology
+from pyiem.network import Table as NetworkTable
 
 
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.5
+PROGRAM_VERSION = 0.6
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -101,7 +102,7 @@ WWA_CODES = {
  }
 
 
-def write_grids(grids, valid):
+def write_grids(grids, valid, iarchive):
     """Do the write to disk"""
     fn = "/tmp/%s.json" % (valid.strftime("%Y%m%d%H%M"), )
     out = open(fn, 'w')
@@ -161,7 +162,7 @@ def transform_from_corner(ulx, uly, dx, dy):
     return Affine.translation(ulx, uly)*Affine.scale(dx, -dy)
 
 
-def wwa(grids, valid):
+def wwa(grids, valid, iarchive):
     """An attempt at rasterizing the WWA"""
     pgconn = psycopg2.connect(database='postgis', host='iemdb', user='nobody')
     table = "warnings_%s" % (valid.year, )
@@ -187,71 +188,124 @@ def wwa(grids, valid):
                     grids['wawa'][i, j] = grids['wawa'][i, j] + stradd
 
 
-def snowd(grids, valid):
+def snowd(grids, valid, iarchive):
     """ Do the snowdepth grid"""
     pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
     df = read_sql("""
         SELECT ST_x(geom) as lon, ST_y(geom) as lat,
         max(snowd) as snow
         from summary s JOIN stations t on (s.iemid = t.iemid)
-        WHERE s.day in ('TODAY', 'YESTERDAY') and
+        WHERE s.day in (%s, %s) and
         t.network in ('IA_COOP', 'MN_COOP', 'WI_COOP', 'IL_COOP',
         'MO_COOP', 'NE_COOP', 'KS_COOP', 'SD_COOP') and snowd >= 0
         and snowd < 100 GROUP by lon, lat
-        """, pgconn, index_col=None)
+        """, pgconn, params=(valid.date(),
+                             (valid - datetime.timedelta(days=1)).date()),
+                  index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                distance(df['snow'].values, 'IN').value('MM'))
     grids['snwd'] = nn(XI, YI)
 
 
-def roadtmpc(grids, valid):
+def roadtmpc(grids, valid, iarchive):
     """ Do the RWIS Road times grid"""
-    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
-    df = read_sql("""
-        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-        tsf0
-        from current c JOIN stations t on (c.iemid = t.iemid)
-        WHERE c.valid > now() - '2 hours'::interval and
-        t.network in ('IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS', 'MO_RWIS',
-        'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
-        and tsf0 < 150
-        """, pgconn, index_col=None)
+    if iarchive:
+        nt = NetworkTable(['IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS',
+                           'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS'])
+        pgconn = psycopg2.connect(database='rwis', host='iemdb', user='nobody')
+        df = read_sql("""
+            SELECT station, tfs0 as tsf0
+            from alldata WHERE valid >= %s and valid < %s and
+            tfs0 >= -50 and tfs0 < 150
+            """, pgconn,  params=((valid - datetime.timedelta(minutes=30)),
+                                  (valid + datetime.timedelta(minutes=30))),
+                      index_col=None)
+        df['lat'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lat',
+                                                                        0))
+        df['lon'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lon',
+                                                                        0))
+    else:
+        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        df = read_sql("""
+            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+            tsf0
+            from current c JOIN stations t on (c.iemid = t.iemid)
+            WHERE c.valid > now() - '2 hours'::interval and
+            t.network in ('IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS',
+            'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
+            and tsf0 < 150
+            """, pgconn, index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                temperature(df['tsf0'].values, 'F').value('C'))
     grids['roadtmpc'] = nn(XI, YI)
 
 
-def srad(grids, valid):
-    """ Do the RWIS Road times grid"""
-    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
-    df = read_sql("""
-        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-        srad
-        from current c JOIN stations t on (c.iemid = t.iemid)
-        WHERE c.valid > now() - '2 hours'::interval and
-        t.network in ('ISUSM') and srad >= 0
-        """, pgconn, index_col=None)
+def srad(grids, valid, iarchive):
+    """ Do the RWIS Road times grid
+
+    TODO: fix units
+    """
+    if iarchive:
+        nt = NetworkTable('ISUAG')
+        pgconn = psycopg2.connect(database='isuag', host='iemdb',
+                                  user='nobody')
+        df = read_sql("""
+            SELECT station, slrmj_tot as srad
+            from sm_hourly
+            WHERE valid >= %s and valid < %s and slrmj_tot >= 0
+            """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
+                                 (valid + datetime.timedelta(minutes=30))),
+                      index_col=None)
+        df['lat'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lat',
+                                                                        0))
+        df['lon'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lon',
+                                                                        0))
+    else:
+        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        df = read_sql("""
+            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+            srad
+            from current c JOIN stations t on (c.iemid = t.iemid)
+            WHERE c.valid > now() - '2 hours'::interval and
+            t.network in ('ISUSM') and srad >= 0
+            """, pgconn, index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                df['srad'].values)
     grids['srad'] = nn(XI, YI)
 
 
-def simple(grids, valid):
+def simple(grids, valid, iarchive):
     """Simple gridder (stub for now)"""
-    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
-    df = read_sql("""
-        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-        tmpf, dwpf, sknt, drct, vsby
-        from current c JOIN stations t on (c.iemid = t.iemid)
-        WHERE c.valid > now() - '1 hour'::interval and
-        t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
-        'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
-        and drct is not null and tmpf is not null and dwpf is not null
-        and vsby is not null
-        """, pgconn, index_col=None)
+    if iarchive:
+        pgconn = psycopg2.connect(database='asos', host='iemdb', user='nobody')
+        df = read_sql("""
+            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+            tmpf, dwpf, sknt, drct, vsby
+            from alldata c JOIN stations t on
+            (c.station = t.id)
+            WHERE c.valid >= %s and c.valid < %s and
+            t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
+            'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
+            and drct is not null and tmpf is not null and dwpf is not null
+            and vsby is not null
+            """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
+                                 (valid + datetime.timedelta(minutes=30))),
+                      index_col=None)
+    else:
+        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        df = read_sql("""
+            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+            tmpf, dwpf, sknt, drct, vsby
+            from current c JOIN stations t on (c.iemid = t.iemid)
+            WHERE c.valid > now() - '1 hour'::interval and
+            t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
+            'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
+            and drct is not null and tmpf is not null and dwpf is not null
+            and vsby is not null
+            """, pgconn, index_col=None)
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                temperature(df['tmpf'].values, 'F').value('C'))
@@ -283,8 +337,11 @@ def simple(grids, valid):
     grids['vsby'] = nn(XI, YI)
 
 
-def ptype(grids, valid):
-    """Attempt to use MRMS ptype here"""
+def ptype(grids, valid, iarchive):
+    """Attempt to use MRMS ptype here
+
+    TODO: find a datasource for pre Nov 2014 dates
+    """
     fn = None
     i = 0
     while i < 10:
@@ -317,8 +374,11 @@ def ptype(grids, valid):
     grids['ptype'] = np.flipud(grb['values'][top:bottom, left:right])
 
 
-def pcpn(grids, valid):
-    """Attempt to use MRMS pcpn here"""
+def pcpn(grids, valid, iarchive):
+    """Attempt to use MRMS pcpn here
+
+    TODO: find a datasource for pre Nov 2014 dates
+    """
     fn = None
     i = 0
     while i < 10:
@@ -354,14 +414,17 @@ def pcpn(grids, valid):
 def run(valid):
     """Run for this timestamp (UTC)"""
     grids = init_grids()
-    simple(grids, valid)
-    wwa(grids, valid)
-    ptype(grids, valid)
-    pcpn(grids, valid)
-    snowd(grids, valid)
-    roadtmpc(grids, valid)
-    srad(grids, valid)
-    write_grids(grids, valid)
+    floor = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    iarchive = (valid < floor)
+    simple(grids, valid, iarchive)
+    wwa(grids, valid, iarchive)
+    ptype(grids, valid, iarchive)
+    pcpn(grids, valid, iarchive)
+    snowd(grids, valid, iarchive)
+    roadtmpc(grids, valid, iarchive)
+    srad(grids, valid, iarchive)
+    write_grids(grids, valid, iarchive)
 
 
 def main(argv):
