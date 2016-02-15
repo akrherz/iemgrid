@@ -37,7 +37,7 @@ from pyiem.network import Table as NetworkTable
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.6
+PROGRAM_VERSION = 0.7
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -243,21 +243,31 @@ def roadtmpc(grids, valid, iarchive):
 
 
 def srad(grids, valid, iarchive):
-    """ Do the RWIS Road times grid
-
-    TODO: fix units
-    """
+    """Solar Radiation (W m**-2)"""
     if iarchive:
-        nt = NetworkTable('ISUAG')
         pgconn = psycopg2.connect(database='isuag', host='iemdb',
                                   user='nobody')
-        df = read_sql("""
-            SELECT station, slrmj_tot as srad
-            from sm_hourly
-            WHERE valid >= %s and valid < %s and slrmj_tot >= 0
-            """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
-                                 (valid + datetime.timedelta(minutes=30))),
-                      index_col=None)
+        # We have to split based on if we are prior to 1 Jan 2014
+        if valid.year < 2014:
+            nt = NetworkTable('ISUAG')
+            # c800 is kilo calorie per meter squared per hour
+            df = read_sql("""
+                SELECT station, c800 * 1.162 as srad
+                from hourly
+                WHERE valid >= %s and valid < %s and slrmj_tot >= 0
+                """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
+                                     (valid + datetime.timedelta(minutes=30))),
+                          index_col=None)
+        else:
+            nt = NetworkTable('ISUSM')
+            # Not fully certain on this unit, but it appears to be ok
+            df = read_sql("""
+                SELECT station, slrkw_avg as srad
+                from sm_hourly
+                WHERE valid >= %s and valid < %s and slrmj_tot >= 0
+                """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
+                                     (valid + datetime.timedelta(minutes=30))),
+                          index_col=None)
         df['lat'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lat',
                                                                         0))
         df['lon'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lon',
@@ -338,10 +348,30 @@ def simple(grids, valid, iarchive):
 
 
 def ptype(grids, valid, iarchive):
-    """Attempt to use MRMS ptype here
-
-    TODO: find a datasource for pre Nov 2014 dates
+    """MRMS Precip Type
+http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
+-3    no coverage
+0    no precipitation
+1    warm stratiform rain
+2    warm stratiform rain
+3    snow
+4    snow
+5    reserved for future use
+6    convective rain
+7    rain mixed with hail
+8    reserved for future use
+9    flag no longer used
+10    cold stratiform rain
+91    tropical/stratiform rain mix
+96    tropical/convective rain mix
     """
+    floor = datetime.datetime(2016, 1, 21)
+    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    if valid < floor:
+        # Use hack for now
+        grids['ptype'] = np.where(grids['tmpc'] < 0, 3, 10)
+        return
+
     fn = None
     i = 0
     while i < 10:
@@ -379,6 +409,23 @@ def pcpn(grids, valid, iarchive):
 
     TODO: find a datasource for pre Nov 2014 dates
     """
+    floor = datetime.datetime(2014, 11, 1)
+    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    if valid < floor:
+        # Use stageIV
+        ts = (valid + datetime.timedelta(minutes=60)).replace(minute=0)
+        gribfn = ts.strftime(("/mesonet/ARCHIVE/data/%Y/%m/%d/stage4/ST4."
+                              "%Y%m%d%H.01h.grib"))
+        if not os.path.isfile(gribfn):
+            return
+        grbs = pygrib.open(gribfn)
+        grib = grbs[1]
+        lats, lons = grib.latlons()
+        vals = grib.values / 12.  # Convert into 5 minute total
+        nn = NearestNDInterpolator((lons.flatten(), lats.flatten()),
+                                   vals.flatten())
+        grids['pcpn'] = nn(XI, YI)
+        return
     fn = None
     i = 0
     while i < 10:
