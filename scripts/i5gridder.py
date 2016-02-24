@@ -37,7 +37,7 @@ from pyiem.network import Table as NetworkTable
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
-PROGRAM_VERSION = 0.7
+PROGRAM_VERSION = 0.8
 DOMAIN = {'wawa': {'units': '1', 'format': '%s'},
           'ptype': {'units': '1', 'format': '%i'},
           'tmpc': {'units': 'C', 'format': '%.2f'},
@@ -132,6 +132,7 @@ def write_grids(grids, valid, iarchive):
             i += 1
     out.write(",\n".join(ar))
     out.write("]}\n")
+    out.close()
     # Create a zipfile of this collection
     zipfn = "/tmp/wx_%s.zip" % (valid.strftime("%Y%m%d%H%M"), )
     z = zipfile.ZipFile(zipfn, 'w', zipfile.ZIP_DEFLATED)
