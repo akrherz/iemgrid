@@ -255,7 +255,7 @@ def srad(grids, valid, iarchive):
             df = read_sql("""
                 SELECT station, c800 * 1.162 as srad
                 from hourly
-                WHERE valid >= %s and valid < %s and slrmj_tot >= 0
+                WHERE valid >= %s and valid < %s and c800 >= 0
                 """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
                                      (valid + datetime.timedelta(minutes=30))),
                           index_col=None)
