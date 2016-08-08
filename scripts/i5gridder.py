@@ -318,6 +318,11 @@ def simple(grids, valid, iarchive):
             and vsby is not null
             """, pgconn, index_col=None)
 
+    if len(df.index) < 5:
+        print(("i5gridder abort len(data): %s for %s iarchive: %s"
+               % (len(df.index), valid, iarchive)))
+        sys.exit()
+
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                temperature(df['tmpf'].values, 'F').value('C'))
     grids['tmpc'] = nn(XI, YI)
