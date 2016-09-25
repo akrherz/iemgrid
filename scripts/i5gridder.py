@@ -282,6 +282,10 @@ def srad(grids, valid, iarchive):
             WHERE c.valid > now() - '2 hours'::interval and
             t.network in ('ISUSM') and srad >= 0
             """, pgconn, index_col=None)
+    if len(df.index) < 5:
+        print(("i5gridder abort len(data): %s for %s iarchive: %s"
+               % (len(df.index), valid, iarchive)))
+        sys.exit()
 
     nn = NearestNDInterpolator((df['lon'].values, df['lat'].values),
                                df['srad'].values)
