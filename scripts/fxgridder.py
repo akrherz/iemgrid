@@ -16,7 +16,7 @@ from pyiem.datatypes import temperature, humidity, speed
 from pyiem.meteorology import dewpoint, drct
 
 TMP = "/mesonet/tmp"
-PROGRAM_VERSION = "1"
+PROGRAM_VERSION = "2"
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
@@ -41,7 +41,7 @@ def dl(valid):
         o.close()
 
 
-def write_grids(valid, fhour):
+def write_grids(fp, valid, fhour):
     """Do the write to disk"""
     gribfn = "%s/%sF%03i.grib2" % (TMP, valid.strftime("%Y%m%d%H%M"),
                                    fhour)
@@ -93,19 +93,9 @@ def write_grids(valid, fhour):
                                    vals.flatten())
         d['vsby'] = nn(XI, YI)
 
-    fts = valid + datetime.timedelta(hours=fhour)
-    fn = "%s/%sF%03i.json" % (TMP, valid.strftime("%Y%m%d%H%M"), fhour)
-    out = open(fn, 'w')
-    out.write("""{"time": "%s",
-    "model_init_time": "%s",
-    "forecast_hour": %s,
-    "type": "forecast",
-    "revision": "%s",
-    "hostname": "%s",
-    "data": [
-    """ % (fts.strftime("%Y-%m-%dT%H:%M:%SZ"),
-           valid.strftime("%Y-%m-%dT%H:%M:%SZ"), fhour,
-           PROGRAM_VERSION, socket.gethostname()))
+    fp.write("""{"forecast_hour": "%03i",
+    "gids": [
+""" % (fhour,))
     fmt = ('{"gid": %s, "tmpc": %s, "dwpc": %s, '
            '"smps": %s, "drct": %s, "vsby": %s, "pcpn": %s}')
     i = 1
@@ -125,19 +115,37 @@ def write_grids(valid, fhour):
                              f('vsby', row, col, '%.3f'),
                              f('pcpn', row, col, '%.2f')))
             i += 1
-    out.write(",\n".join(ar))
-    out.write("]}\n")
-    out.close()
+    fp.write(",\n".join(ar))
+    fp.write("]}%s\n" % ("," if fhour != 84 else '',))
+
+
+def write_header(valid):
+    """Initialize the file"""
+    fn = "%s/%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
+    fp = open(fn, 'w')
+    fp.write("""{"Date": "%s",
+        "model_init_time": "%s",
+        "type": "forecast",
+        "revision": "%s",
+        "hostname": "%s",
+        "data": [
+    """ % (valid.strftime("%Y-%m-%d"), valid.strftime("%Y-%m-%dT%H:%M:%SZ"),
+           PROGRAM_VERSION, socket.gethostname()))
+    return fp
+
+
+def write_footer(fp):
+    fp.write("]}")
+    fp.close()
 
 
 def zipfiles(valid):
-    files = glob.glob("%s/%sF???.json" % (TMP, valid.strftime("%Y%m%d%H%M")))
     # Create a zipfile of this collection
     zipfn = "%s/fx_%s.zip" % (TMP, valid.strftime("%Y%m%d%H%M"))
     z = zipfile.ZipFile(zipfn, 'w', zipfile.ZIP_DEFLATED)
-    for fn in files:
-        z.write(fn, fn.split("/")[-1])
-        os.unlink(fn)
+    fn = "%s/%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
+    z.write(fn, fn.split("/")[-1])
+    os.unlink(fn)
     z.close()
     # move to cache folder
     shutil.copyfile(zipfn,
@@ -156,12 +164,16 @@ def run(valid):
     """Do the work for this valid time"""
     # 1. Download NAM grib files from mtarchive
     dl(valid)
-    # 2. write grids
+    # 2. create header
+    fp = write_header(valid)
+    # 3. write grids
     for fhour in range(0, 85, 3):
-        write_grids(valid, fhour)
-    # 3. save to shared drive
+        write_grids(fp, valid, fhour)
+    # 4. finalize file
+    write_footer(fp)
+    # 5. save to shared drive
     zipfiles(valid)
-    # 4. cleanup cached gribs
+    # 6. cleanup cached gribs
     cleanup(valid)
 
 
