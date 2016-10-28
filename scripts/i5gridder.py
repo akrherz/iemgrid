@@ -481,6 +481,10 @@ def run(valid):
     snowd(grids, valid, iarchive)
     roadtmpc(grids, valid, iarchive)
     srad(grids, valid, iarchive)
+    # [suspenders] Prevent negative numbers, unsure why we sometimes get these
+    # from the data sources being used :/
+    for vname in ['pcpn', 'snwd', 'srad']:
+        grids[vname] = np.where(grids[vname] >= 0, grids[vname], 0)
     write_grids(grids, valid, iarchive)
 
 
