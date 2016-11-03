@@ -467,7 +467,7 @@ def pcpn(grids, valid, iarchive):
     left = int((reference.IA_WEST - -130.) * 100.)
 
     # two minute accumulation is in mm/hr / 60 * 5
-    grids['pcpn'] = np.flipud(values[top:bottom, left:right]) * 12.0
+    grids['pcpn'] = np.flipud(values[top:bottom, left:right]) / 12.0
     # print("i5gridder: min(pcpn) is %.2f" % (np.min(grids['pcpn']),))
 
 
