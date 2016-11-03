@@ -430,7 +430,7 @@ def pcpn(grids, valid, iarchive):
         grbs = pygrib.open(gribfn)
         grib = grbs[1]
         lats, lons = grib.latlons()
-        vals = grib.values / 12.  # Convert into 5 minute total
+        vals = grib.values
         nn = NearestNDInterpolator((lons.flatten(), lats.flatten()),
                                    vals.flatten())
         grids['pcpn'] = nn(XI, YI)
@@ -467,6 +467,7 @@ def pcpn(grids, valid, iarchive):
     left = int((reference.IA_WEST - -130.) * 100.)
 
     # two minute accumulation is in mm/hr / 60 * 5
+    # stage IV is mm/hr
     grids['pcpn'] = np.flipud(values[top:bottom, left:right]) / 12.0
     # print("i5gridder: min(pcpn) is %.2f" % (np.min(grids['pcpn']),))
 
