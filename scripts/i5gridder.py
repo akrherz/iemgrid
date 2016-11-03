@@ -32,6 +32,7 @@ from rasterio import features
 from rasterio.transform import Affine
 from pyiem import meteorology
 from pyiem.network import Table as NetworkTable
+import pyiem.mrms as mrms_util
 
 
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
@@ -386,13 +387,14 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
     i = 0
     while i < 10:
         ts = valid - datetime.timedelta(minutes=i)
-        testfn = ts.strftime(("/mnt/a4/data/%Y/%m/%d/mrms/ncep/PrecipFlag/"
-                              "PrecipFlag_00.00_%Y%m%d-%H%M00.grib2.gz"))
-        if os.path.isfile(testfn):
-            fn = testfn
-            break
+        if ts.minute % 2 == 0:
+            testfn = mrms_util.fetch('PrecipFlag', ts)
+            if testfn is not None:
+                fn = testfn
+                break
         i += 1
     if fn is None:
+        print("Warning, no PrecipFlag data found!")
         return
 
     fp = gzip.GzipFile(fn, 'rb')
@@ -402,7 +404,7 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
     tmpfp.close()
     grbs = pygrib.open(tmpfn)
     grb = grbs[1]
-    os.unlink(tmpfn)
+    map(os.unlink, [tmpfn, fn])
 
     # 3500, 7000, starts in upper left
     top = int((55. - reference.IA_NORTH) * 100.)
@@ -415,10 +417,7 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
 
 
 def pcpn(grids, valid, iarchive):
-    """Attempt to use MRMS pcpn here
-
-    TODO: find a datasource for pre Nov 2014 dates
-    """
+    """Attempt to use MRMS or stage IV pcpn here"""
     floor = datetime.datetime(2014, 11, 1)
     floor = floor.replace(tzinfo=pytz.timezone("UTC"))
     if valid < floor:
@@ -440,13 +439,14 @@ def pcpn(grids, valid, iarchive):
     i = 0
     while i < 10:
         ts = valid - datetime.timedelta(minutes=i)
-        testfn = ts.strftime(("/mnt/a4/data/%Y/%m/%d/mrms/ncep/PrecipRate/"
-                              "PrecipRate_00.00_%Y%m%d-%H%M00.grib2.gz"))
-        if os.path.isfile(testfn):
-            fn = testfn
-            break
+        if ts.minute % 2 == 0:
+            testfn = mrms_util.fetch('PrecipRate', ts)
+            if testfn is not None:
+                fn = testfn
+                break
         i += 1
     if fn is None:
+        print("Warning, no PrecipRate data found!")
         return
     fp = gzip.GzipFile(fn, 'rb')
     (_, tmpfn) = tempfile.mkstemp()
@@ -454,8 +454,10 @@ def pcpn(grids, valid, iarchive):
     tmpfp.write(fp.read())
     tmpfp.close()
     grbs = pygrib.open(tmpfn)
-    grb = grbs[1]
-    os.unlink(tmpfn)
+    values = grbs[1]['values']
+    # just set -3 (no coverage) to 0 for now
+    values = np.where(values < 0, 0, values)
+    map(os.unlink, [fn, tmpfn])
 
     # 3500, 7000, starts in upper left
     top = int((55. - reference.IA_NORTH) * 100.)
@@ -465,7 +467,8 @@ def pcpn(grids, valid, iarchive):
     left = int((reference.IA_WEST - -130.) * 100.)
 
     # two minute accumulation is in mm/hr / 60 * 5
-    grids['pcpn'] = np.flipud(grb['values'][top:bottom, left:right]) * 12.0
+    grids['pcpn'] = np.flipud(values[top:bottom, left:right]) * 12.0
+    # print("i5gridder: min(pcpn) is %.2f" % (np.min(grids['pcpn']),))
 
 
 def run(valid):
