@@ -1,3 +1,20 @@
+30 Nov 2016
+-----------
+ - Two additional Dell racks were present to help with the data processing
+   requirements.
+ - They are using processing.js on their end to do some of the work
+ - They are storing data utilizing RGB to store three variables within one
+   file.
+ - They demonstrated a Tableau around Omaha showing fancy graphics
+ - They had a display showing data around crashes within the database
+ - There is bluetooth sensors now on the DOT blades, so blade position data
+   should be good now.
+ - The plow imagery provides a great dataset for looking into crashes
+ - Discussion about sources of precip type forecasts and the national blend of
+   models does not appear to address this, yet.
+ - [x] no units denoted on github README?  gasp, accurate, but I thought I
+   wrote more details on this :(
+
 04 Feb 2016
 -----------
  - A new format was proferred with it being JSON, we worked through an example

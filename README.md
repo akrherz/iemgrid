@@ -58,43 +58,47 @@ Code | Representation
 
 Two meter above ground level air temperature.  This value would be over a
 typical landscape for the location and not necessarily concrete, except in
-very urban areas.
+very urban areas.  Units are Celsius.
 
 ### "dwpc"
 
 Two meter above ground level dew point temperature.  As with "tmpc", the same
-landscape assumptions apply.
+landscape assumptions apply. Units are Celsius.
 
 ### "smps"
 
 Ten meter above ground level wind speed.  This speed does not include gusts,
-but is some average over a couple of minute period.
+but is some average over a couple of minute period. Units are meters per second.
 
 ### "drct"
 
 Wind direction, where the wind is blowing from, at ten meters above ground level.
+Units are degrees from North.
 
 ### "vsby"
 
-Horizontal visibility from automated sensors.
+Horizontal visibility from automated sensors. Units are kilometers.
 
 ### "roadtmpc"
 
 Pavement surface temperature derived from available RWIS reports.  These reports
-include both bridge and approach deck temperatures.
+include both bridge and approach deck temperatures. Units are Celsius
 
 ### "srad"
 
-Photoactive global solar radiation, sometimes called "shortwave down".
+Photoactive global solar radiation, sometimes called "shortwave down". Units
+are watts per meter squared.
 
 ### "snwd"
 
 Snowfall depth analyzed once per day at approximately 7 AM local time.  If
 the reported snowfall depth was zero at 7 AM and it started snowing at noon,
-this field would still be zero until it updated the next day at 7 AM.
+this field would still be zero until it updated the next day at 7 AM. Units
+are millimeters.
   
 ### "pcpn"
 
 Five minute precipitation accumulation ending at the time of analysis. This is
-liquid equivelent.  So snow and sleet are melted to derive this value.
+liquid equivelent.  So snow and sleet are melted to derive this value. Units
+are millimeters accumulation over those 5 minutes.
 
