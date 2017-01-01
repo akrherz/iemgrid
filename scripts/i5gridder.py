@@ -403,6 +403,9 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
     tmpfp.write(fp.read())
     tmpfp.close()
     grbs = pygrib.open(tmpfn)
+    if grbs.messages < 1:
+        print("i5gridder %s has %s messages?" % (tmpfn, grbs.messages))
+        return
     grb = grbs[1]
     map(os.unlink, [tmpfn, fn])
 
