@@ -264,9 +264,9 @@ def srad(grids, valid, iarchive):
             nt = NetworkTable('ISUSM')
             # Not fully certain on this unit, but it appears to be ok
             df = read_sql("""
-                SELECT station, slrkw_avg as srad
+                SELECT station, slrkw_avg_qc as srad
                 from sm_hourly
-                WHERE valid >= %s and valid < %s and slrmj_tot >= 0
+                WHERE valid >= %s and valid < %s and slrkw_avg_qc >= 0
                 """, pgconn, params=((valid - datetime.timedelta(minutes=30)),
                                      (valid + datetime.timedelta(minutes=30))),
                           index_col=None)
