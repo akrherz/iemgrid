@@ -11,28 +11,30 @@
   [o] "snwd"     Snow Depth would be once per day
   [o] "pcpn"     Precipitation
 """
+from __future__ import print_function
 import sys
 import datetime
-import pytz
 import os
 import socket
 import shutil
 import gzip
-import pygrib
 import tempfile
 import zipfile
+
+import pygrib
 import numpy as np
-from pyiem import reference
-import psycopg2
+import pytz
 from pandas.io.sql import read_sql
 from scipy.interpolate import NearestNDInterpolator
-from pyiem.datatypes import temperature, speed, distance, direction
 from geopandas import GeoDataFrame
 from rasterio import features
 from rasterio.transform import Affine
 from pyiem import meteorology
+from pyiem.datatypes import temperature, speed, distance, direction
 from pyiem.network import Table as NetworkTable
+from pyiem import reference
 import pyiem.mrms as mrms_util
+from pyiem.util import get_dbconn
 
 
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
@@ -166,7 +168,7 @@ def transform_from_corner(ulx, uly, dx, dy):
 
 def wwa(grids, valid, iarchive):
     """An attempt at rasterizing the WWA"""
-    pgconn = psycopg2.connect(database='postgis', host='iemdb', user='nobody')
+    pgconn = get_dbconn('postgis', user='nobody')
     table = "warnings_%s" % (valid.year, )
     df = GeoDataFrame.from_postgis("""
         SELECT geom as geom, phenomena ||'.'|| significance as code, w.ugc from
@@ -192,7 +194,7 @@ def wwa(grids, valid, iarchive):
 
 def snowd(grids, valid, iarchive):
     """ Do the snowdepth grid"""
-    pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+    pgconn = get_dbconn('iem', user='nobody')
     df = read_sql("""
         SELECT ST_x(geom) as lon, ST_y(geom) as lat,
         max(snowd) as snow
@@ -215,7 +217,7 @@ def roadtmpc(grids, valid, iarchive):
     if iarchive:
         nt = NetworkTable(['IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS',
                            'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS'])
-        pgconn = psycopg2.connect(database='rwis', host='iemdb', user='nobody')
+        pgconn = get_dbconn('rwis', user='nobody')
         df = read_sql("""
             SELECT station, tfs0 as tsf0
             from alldata WHERE valid >= %s and valid < %s and
@@ -228,7 +230,7 @@ def roadtmpc(grids, valid, iarchive):
         df['lon'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lon',
                                                                         0))
     else:
-        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        pgconn = get_dbconn('iem', user='nobody')
         df = read_sql("""
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
             tsf0
@@ -247,8 +249,7 @@ def roadtmpc(grids, valid, iarchive):
 def srad(grids, valid, iarchive):
     """Solar Radiation (W m**-2)"""
     if iarchive:
-        pgconn = psycopg2.connect(database='isuag', host='iemdb',
-                                  user='nobody')
+        pgconn = get_dbconn('isuag', user='nobody')
         # We have to split based on if we are prior to 1 Jan 2014
         if valid.year < 2014:
             nt = NetworkTable('ISUAG')
@@ -275,7 +276,7 @@ def srad(grids, valid, iarchive):
         df['lon'] = df['station'].apply(lambda x: nt.sts.get(x, {}).get('lon',
                                                                         0))
     else:
-        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        pgconn = get_dbconn('iem', user='nobody')
         df = read_sql("""
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
             srad
@@ -296,7 +297,7 @@ def srad(grids, valid, iarchive):
 def simple(grids, valid, iarchive):
     """Simple gridder (stub for now)"""
     if iarchive:
-        pgconn = psycopg2.connect(database='asos', host='iemdb', user='nobody')
+        pgconn = get_dbconn('asos', user='nobody')
         df = read_sql("""
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
             tmpf, dwpf, sknt, drct, vsby
@@ -311,7 +312,7 @@ def simple(grids, valid, iarchive):
                                  (valid + datetime.timedelta(minutes=30))),
                       index_col=None)
     else:
-        pgconn = psycopg2.connect(database='iem', host='iemdb', user='nobody')
+        pgconn = get_dbconn('iem', user='nobody')
         df = read_sql("""
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
             tmpf, dwpf, sknt, drct, vsby
@@ -504,6 +505,7 @@ def main(argv):
                               int(argv[4]), int(argv[5]))
     valid = valid.replace(tzinfo=pytz.timezone("UTC"))
     run(valid)
+
 
 if __name__ == '__main__':
     main(sys.argv)
