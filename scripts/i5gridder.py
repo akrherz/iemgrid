@@ -123,9 +123,11 @@ def write_grids(grids, valid, iarchive):
     ar = []
     for row in range(len(YAXIS)):
         for col in range(len(XAXIS)):
+            a = repr(grids['wawa'][row, col][:-1])
+            if isinstance(a, bytes):
+                a = a.decode('utf-8')
             ar.append(fmt % (i, grids['tmpc'][row, col],
-                             repr(grids['wawa'][row, col][:-1].split(
-                                                    ",")).replace("'", '"'),
+                             repr(a.split(",")).replace("'", '"'),
                              grids['ptype'][row, col], grids['dwpc'][row, col],
                              grids['smps'][row, col], grids['drct'][row, col],
                              grids['vsby'][row, col],
