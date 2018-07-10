@@ -123,9 +123,7 @@ def write_grids(grids, valid, iarchive):
     ar = []
     for row in range(len(YAXIS)):
         for col in range(len(XAXIS)):
-            a = repr(grids['wawa'][row, col][:-1])
-            if isinstance(a, bytes):
-                a = a.decode('utf-8')
+            a = grids['wawa'][row, col][:-1]
             ar.append(fmt % (i, grids['tmpc'][row, col],
                              repr(a.split(",")).replace("'", '"'),
                              grids['ptype'][row, col], grids['dwpc'][row, col],
@@ -156,8 +154,7 @@ def init_grids():
     grids = {}
     for label in DOMAIN:
         if label == 'wawa':
-            grids[label] = np.chararray((324, 660), itemsize=25)
-            grids[label][:] = ''
+            grids[label] = np.empty([324, 660], dtype="<U25")
         else:
             grids[label] = np.zeros((324, 660), np.float32)
 
