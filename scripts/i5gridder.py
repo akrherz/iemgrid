@@ -407,7 +407,8 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
         print("i5gridder %s has %s messages?" % (tmpfn, grbs.messages))
         return
     grb = grbs[1]
-    map(os.unlink, [tmpfn, fn])
+    os.unlink(fn)
+    os.unlink(tmpfn)
 
     # 3500, 7000, starts in upper left
     top = int((55. - reference.IA_NORTH) * 100.)
@@ -417,6 +418,7 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
     left = int((reference.IA_WEST - -130.) * 100.)
 
     grids['ptype'] = np.flipud(grb['values'][top:bottom, left:right])
+
 
 
 def pcpn(grids, valid, iarchive):
@@ -460,7 +462,8 @@ def pcpn(grids, valid, iarchive):
     values = grbs[1]['values']
     # just set -3 (no coverage) to 0 for now
     values = np.where(values < 0, 0, values)
-    map(os.unlink, [fn, tmpfn])
+    os.unlink(fn)
+    os.unlink(tmpfn)
 
     # 3500, 7000, starts in upper left
     top = int((55. - reference.IA_NORTH) * 100.)
