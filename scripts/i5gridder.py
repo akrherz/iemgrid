@@ -420,7 +420,6 @@ http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
     grids['ptype'] = np.flipud(grb['values'][top:bottom, left:right])
 
 
-
 def pcpn(grids, valid, iarchive):
     """Attempt to use MRMS or stage IV pcpn here"""
     floor = datetime.datetime(2014, 11, 1)

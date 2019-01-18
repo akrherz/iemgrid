@@ -1,19 +1,21 @@
 """Generate forecast grids"""
 import sys
 import datetime
-import pytz
-import requests
 import os
-import pygrib
 import socket
 import shutil
 import zipfile
 import glob
+
+import requests
 import numpy as np
+import pytz
 from scipy.interpolate import NearestNDInterpolator
+import pygrib
 from pyiem import reference
 from pyiem.datatypes import temperature, humidity, speed
 from pyiem.meteorology import dewpoint, drct
+from pyiem.util import exponential_backoff
 
 TMP = "/mesonet/tmp"
 PROGRAM_VERSION = "2"
@@ -32,8 +34,8 @@ def dl(valid):
         uri = valid.strftime(("http://mtarchive.geol.iastate.edu/%Y/%m/%d/"
                               "grib2/ncep/NAM218/%H/%Y%m%d%H%MF" +
                               ("%03i" % (fhour,)) + ".grib2"))
-        r = requests.get(uri)
-        if r.status_code != 200:
+        r = exponential_backoff(requests.get, uri, timeout=60)
+        if r is None or r.status_code != 200:
             print("fxgridder dl error for: %s" % (uri,))
             continue
         o = open(fn, 'wb')
@@ -183,8 +185,9 @@ def main(argv):
         return
     valid = datetime.datetime(int(argv[1]), int(argv[2]), int(argv[3]),
                               int(argv[4]), 0)
-    valid = valid.replace(tzinfo=pytz.timezone("UTC"))
+    valid = valid.replace(tzinfo=pytz.UTC)
     run(valid)
+
 
 if __name__ == '__main__':
     main(sys.argv)
