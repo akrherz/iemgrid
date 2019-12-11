@@ -33,12 +33,14 @@ import os
 import sys
 import subprocess
 
-WANT = ['10 metre U wind component',
-        '10 metre V wind component',
-        '2 metre temperature',
-        'Relative humidity',
-        'Visibility',
-        'Total Precipitation']
+WANT = [
+    "10 metre U wind component",
+    "10 metre V wind component",
+    "2 metre temperature",
+    "Relative humidity",
+    "Visibility",
+    "Total Precipitation",
+]
 WANTLVL = [10, 10, 2, 2, 0, 0]
 
 
@@ -52,14 +54,17 @@ def process(fn):
         os.unlink(fn)
         return
     newfn = "%s%sF%s.grib2" % (yyyymmdd, hhmi, hhh)
-    newdir = ("%s/%s/%s/grib2/ncep/NAM218/%s"
-              ) % (yyyymmdd[:4], yyyymmdd[4:6], yyyymmdd[6:],
-                   hhmi[:2])
+    newdir = ("%s/%s/%s/grib2/ncep/NAM218/%s") % (
+        yyyymmdd[:4],
+        yyyymmdd[4:6],
+        yyyymmdd[6:],
+        hhmi[:2],
+    )
     if not os.path.isdir(newdir):
         os.makedirs(newdir)
     # 201611101200F003.grib2
     print("%s -> %s %s" % (fn, newdir, newfn))
-    o = open("%s/%s" % (newdir, newfn), 'wb')
+    o = open("%s/%s" % (newdir, newfn), "wb")
     for grb in grbs:
         if grb.name in WANT:
             if grb.level == WANTLVL[WANT.index(grb.name)]:
@@ -79,5 +84,6 @@ def dodir(mydir):
 def main(argv):
     dodir(argv[1])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main(sys.argv)
