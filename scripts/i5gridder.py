@@ -218,7 +218,7 @@ def wwa(grids, valid, iarchive):
 
 
 def snowd(grids, valid, iarchive):
-    """ Do the snowdepth grid"""
+    """Do the snowdepth grid"""
     pgconn = get_dbconn("iem", user="nobody")
     df = read_sql(
         """
@@ -243,7 +243,7 @@ def snowd(grids, valid, iarchive):
 
 
 def roadtmpc(grids, valid, iarchive):
-    """ Do the RWIS Road times grid"""
+    """Do the RWIS Road times grid"""
     if iarchive:
         nt = NetworkTable(
             [
@@ -326,9 +326,9 @@ def srad(grids, valid, iarchive):
             # Not fully certain on this unit, but it appears to be ok
             df = read_sql(
                 """
-                SELECT station, slrkw_avg_qc as srad
+                SELECT station, slrkj_tot_qc * 1000. / 3600. as srad
                 from sm_hourly
-                WHERE valid >= %s and valid < %s and slrkw_avg_qc >= 0
+                WHERE valid >= %s and valid < %s and slrkj_tot_qc >= 0
                 """,
                 pgconn,
                 params=(
@@ -467,21 +467,21 @@ def simple(grids, valid, iarchive):
 
 def ptype(grids, valid, iarchive):
     """MRMS Precip Type
-http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
--3    no coverage
-0    no precipitation
-1    warm stratiform rain
-2    warm stratiform rain
-3    snow
-4    snow
-5    reserved for future use
-6    convective rain
-7    rain mixed with hail
-8    reserved for future use
-9    flag no longer used
-10    cold stratiform rain
-91    tropical/stratiform rain mix
-96    tropical/convective rain mix
+    http://www.nssl.noaa.gov/projects/mrms/operational/tables.php
+    -3    no coverage
+    0    no precipitation
+    1    warm stratiform rain
+    2    warm stratiform rain
+    3    snow
+    4    snow
+    5    reserved for future use
+    6    convective rain
+    7    rain mixed with hail
+    8    reserved for future use
+    9    flag no longer used
+    10    cold stratiform rain
+    91    tropical/stratiform rain mix
+    96    tropical/convective rain mix
     """
     floor = datetime.datetime(2016, 1, 21)
     floor = floor.replace(tzinfo=pytz.timezone("UTC"))
