@@ -11,15 +11,12 @@
   [o] "snwd"     Snow Depth would be once per day
   [o] "pcpn"     Precipitation
 """
-from __future__ import print_function
 import sys
 import datetime
 import os
 import socket
-import shutil
 import gzip
 import tempfile
-import zipfile
 
 import pygrib
 import numpy as np
@@ -29,14 +26,16 @@ from scipy.interpolate import NearestNDInterpolator
 from geopandas import GeoDataFrame
 from rasterio import features
 from rasterio.transform import Affine
+import boto3
+from botocore.exceptions import ClientError
 from pyiem import meteorology
 from pyiem.datatypes import temperature, speed, distance, direction
 from pyiem.network import Table as NetworkTable
 from pyiem import reference
 import pyiem.mrms as mrms_util
-from pyiem.util import get_dbconn
+from pyiem.util import get_dbconn, logger
 
-
+LOG = logger()
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
@@ -102,9 +101,24 @@ WWA_CODES = {
 }
 
 
+def upload_s3(fn):
+    """Send file to S3 bucket."""
+    session = boto3.Session(profile_name="ntrans")
+    s3 = session.client("s3")
+    sname = fn.split("/")[1]
+    LOG.debug("Uploading %s to S3 as %s", fn, sname)
+    try:
+        response = s3.upload_file(fn, "intrans-weather-feed", sname)
+        LOG.debug(response)
+        return True
+    except ClientError as e:
+        LOG.error(e)
+    return False
+
+
 def write_grids(grids, valid, iarchive):
     """Do the write to disk"""
-    fn = "/tmp/%s.json" % (valid.strftime("%Y%m%d%H%M"),)
+    fn = "/tmp/wx_%s.json" % (valid.strftime("%Y%m%d%H%M"),)
     out = open(fn, "w")
     out.write(
         """{"time": "%s",
@@ -150,17 +164,8 @@ def write_grids(grids, valid, iarchive):
     out.write(",\n".join(ar))
     out.write("]}\n")
     out.close()
-    # Create a zipfile of this collection
-    zipfn = "/tmp/wx_%s.zip" % (valid.strftime("%Y%m%d%H%M"),)
-    z = zipfile.ZipFile(zipfn, "w", zipfile.ZIP_DEFLATED)
-    z.write(fn, fn.split("/")[-1])
-    os.unlink(fn)
-    z.close()
-    # move to cache folder
-    shutil.copyfile(
-        zipfn, "/mesonet/share/pickup/ntrans/%s" % (zipfn.split("/")[-1],)
-    )
-    os.unlink(zipfn)
+    if upload_s3(fn):
+        os.unlink(fn)
 
 
 def init_grids():
@@ -620,3 +625,8 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv)
+
+
+def test_upload():
+    """Test our upload."""
+    assert upload_s3("/tmp/wx_202107061940.json")
