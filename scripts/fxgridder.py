@@ -3,8 +3,6 @@ import sys
 import datetime
 import os
 import socket
-import shutil
-import zipfile
 import glob
 
 import requests
@@ -12,11 +10,14 @@ import numpy as np
 import pytz
 from scipy.interpolate import NearestNDInterpolator
 import pygrib
+import boto3
+from botocore.exceptions import ClientError
 from pyiem import reference
 from pyiem.datatypes import temperature, humidity, speed
 from pyiem.meteorology import dewpoint, drct
-from pyiem.util import exponential_backoff
+from pyiem.util import exponential_backoff, logger, utc
 
+LOG = logger()
 TMP = "/mesonet/tmp"
 PROGRAM_VERSION = "2"
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
@@ -146,7 +147,7 @@ def write_grids(fp, valid, fhour):
 
 def write_header(valid):
     """Initialize the file"""
-    fn = "%s/%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
+    fn = "%s/fx_%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
     fp = open(fn, "w")
     fp.write(
         """{"Date": "%s",
@@ -171,19 +172,20 @@ def write_footer(fp):
     fp.close()
 
 
-def zipfiles(valid):
-    # Create a zipfile of this collection
-    zipfn = "%s/fx_%s.zip" % (TMP, valid.strftime("%Y%m%d%H%M"))
-    z = zipfile.ZipFile(zipfn, "w", zipfile.ZIP_DEFLATED)
-    fn = "%s/%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
-    z.write(fn, fn.split("/")[-1])
-    os.unlink(fn)
-    z.close()
-    # move to cache folder
-    shutil.copyfile(
-        zipfn, "/mesonet/share/pickup/ntrans/%s" % (zipfn.split("/")[-1],)
-    )
-    os.unlink(zipfn)
+def upload_s3(valid):
+    fn = "%s/fx_%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
+    session = boto3.Session(profile_name="ntrans")
+    s3 = session.client("s3")
+    sname = fn.split("/")[-1]
+    LOG.debug("uploading %s to S3 as %s", fn, sname)
+    try:
+        response = s3.upload_file(fn, "intrans-weather-feed", sname)
+        LOG.debug(response)
+        os.unlink(fn)
+        return True
+    except ClientError as e:
+        LOG.error(e)
+    return False
 
 
 def cleanup(valid):
@@ -204,7 +206,7 @@ def run(valid):
     # 4. finalize file
     write_footer(fp)
     # 5. save to shared drive
-    zipfiles(valid)
+    upload_s3(valid)
     # 6. cleanup cached gribs
     cleanup(valid)
 
@@ -222,3 +224,8 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv)
+
+
+def test_upload():
+    """Test our upload."""
+    assert upload_s3(utc(2021, 7, 6))
