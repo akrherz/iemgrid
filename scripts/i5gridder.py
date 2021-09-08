@@ -500,7 +500,7 @@ def ptype(grids, valid, iarchive):
     while i < 10:
         ts = valid - datetime.timedelta(minutes=i)
         if ts.minute % 2 == 0:
-            testfn = mrms_util.fetch("PrecipFlag", ts)
+            testfn = mrms_util.fetch("PrecipFlag", ts, tmpdir="/tmp")
             if testfn is not None:
                 fn = testfn
                 break
@@ -558,7 +558,7 @@ def pcpn(grids, valid, iarchive):
     while i < 10:
         ts = valid - datetime.timedelta(minutes=i)
         if ts.minute % 2 == 0:
-            testfn = mrms_util.fetch("PrecipRate", ts)
+            testfn = mrms_util.fetch("PrecipRate", ts, tmpdir="/tmp")
             if testfn is not None:
                 fn = testfn
                 break
