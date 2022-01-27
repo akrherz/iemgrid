@@ -33,7 +33,7 @@ from pyiem.datatypes import temperature, speed, distance, direction
 from pyiem.network import Table as NetworkTable
 from pyiem import reference
 import pyiem.mrms as mrms_util
-from pyiem.util import get_dbconn, logger
+from pyiem.util import get_dbconn, logger, get_dbconnstr
 
 LOG = logger()
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
@@ -186,7 +186,6 @@ def transform_from_corner(ulx, uly, dx, dy):
 
 def wwa(grids, valid, iarchive):
     """An attempt at rasterizing the WWA"""
-    pgconn = get_dbconn("postgis", user="nobody")
     table = "warnings_%s" % (valid.year,)
     df = GeoDataFrame.from_postgis(
         """
@@ -197,7 +196,7 @@ def wwa(grids, valid, iarchive):
         issue < %s and expire > %s
         and w.wfo in ('FSD', 'ARX', 'DVN', 'DMX', 'EAX', 'FSD', 'OAX', 'MPX')
     """,
-        pgconn,
+        get_dbconnstr("postgis"),
         params=(valid, valid),
         index_col=None,
     )
@@ -224,7 +223,6 @@ def wwa(grids, valid, iarchive):
 
 def snowd(grids, valid, iarchive):
     """Do the snowdepth grid"""
-    pgconn = get_dbconn("iem", user="nobody")
     df = read_sql(
         """
         SELECT ST_x(geom) as lon, ST_y(geom) as lat,
@@ -235,7 +233,7 @@ def snowd(grids, valid, iarchive):
         'MO_COOP', 'NE_COOP', 'KS_COOP', 'SD_COOP') and snowd >= 0
         and snowd < 100 GROUP by lon, lat
         """,
-        pgconn,
+        get_dbconnstr("iem"),
         params=(valid.date(), (valid - datetime.timedelta(days=1)).date()),
         index_col=None,
     )
@@ -262,14 +260,13 @@ def roadtmpc(grids, valid, iarchive):
                 "SD_RWIS",
             ]
         )
-        pgconn = get_dbconn("rwis", user="nobody")
         df = read_sql(
             """
             SELECT station, tfs0 as tsf0
             from alldata WHERE valid >= %s and valid < %s and
             tfs0 >= -50 and tfs0 < 150
             """,
-            pgconn,
+            get_dbconnstr("rwis"),
             params=(
                 (valid - datetime.timedelta(minutes=30)),
                 (valid + datetime.timedelta(minutes=30)),
@@ -283,7 +280,6 @@ def roadtmpc(grids, valid, iarchive):
             lambda x: nt.sts.get(x, {}).get("lon", 0)
         )
     else:
-        pgconn = get_dbconn("iem", user="nobody")
         df = read_sql(
             """
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
@@ -294,7 +290,7 @@ def roadtmpc(grids, valid, iarchive):
             'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
             and tsf0 < 150
             """,
-            pgconn,
+            get_dbconnstr("iem"),
             index_col=None,
         )
 
@@ -308,7 +304,7 @@ def roadtmpc(grids, valid, iarchive):
 def srad(grids, valid, iarchive):
     """Solar Radiation (W m**-2)"""
     if iarchive:
-        pgconn = get_dbconn("isuag", user="nobody")
+        pgconn = get_dbconnstr("isuag")
         # We have to split based on if we are prior to 1 Jan 2014
         if valid.year < 2014:
             nt = NetworkTable("ISUAG")
@@ -349,7 +345,6 @@ def srad(grids, valid, iarchive):
             lambda x: nt.sts.get(x, {}).get("lon", 0)
         )
     else:
-        pgconn = get_dbconn("iem", user="nobody")
         df = read_sql(
             """
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
@@ -358,7 +353,7 @@ def srad(grids, valid, iarchive):
             WHERE c.valid > now() - '2 hours'::interval and
             t.network in ('ISUSM') and srad >= 0 and srad != 'NaN'
             """,
-            pgconn,
+            get_dbconnstr("iem"),
             index_col=None,
         )
     if len(df.index) < 5:
@@ -379,7 +374,6 @@ def srad(grids, valid, iarchive):
 def simple(grids, valid, iarchive):
     """Simple gridder (stub for now)"""
     if iarchive:
-        pgconn = get_dbconn("asos", user="nobody")
         df = read_sql(
             """
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
@@ -392,7 +386,7 @@ def simple(grids, valid, iarchive):
             and drct is not null and tmpf is not null and dwpf is not null
             and vsby is not null
             """,
-            pgconn,
+            get_dbconnstr("asos"),
             params=(
                 (valid - datetime.timedelta(minutes=30)),
                 (valid + datetime.timedelta(minutes=30)),
@@ -400,7 +394,6 @@ def simple(grids, valid, iarchive):
             index_col=None,
         )
     else:
-        pgconn = get_dbconn("iem", user="nobody")
         df = read_sql(
             """
             SELECT ST_x(geom) as lon, ST_y(geom) as lat,
@@ -412,7 +405,7 @@ def simple(grids, valid, iarchive):
             and drct is not null and tmpf is not null and dwpf is not null
             and vsby is not null
             """,
-            pgconn,
+            get_dbconnstr("iem"),
             index_col=None,
         )
 
