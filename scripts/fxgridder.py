@@ -85,7 +85,7 @@ def write_grids(fp, valid, fhour):
     ):
         u = grids["10 metre U wind component"].values
         v = grids["10 metre V wind component"].values
-        vals = ((u ** 2) + (v ** 2)) ** 0.5
+        vals = ((u**2) + (v**2)) ** 0.5
         nn = NearestNDInterpolator(
             (G["LONS"].flatten(), G["LATS"].flatten()), vals.flatten()
         )
@@ -177,10 +177,10 @@ def upload_s3(valid):
     session = boto3.Session(profile_name="ntrans")
     s3 = session.client("s3")
     sname = fn.split("/")[-1]
-    LOG.debug("uploading %s to S3 as %s", fn, sname)
+    LOG.info("uploading %s to S3 as %s", fn, sname)
     try:
-        response = s3.upload_file(fn, "intrans-weather-feed", sname)
-        LOG.debug(response)
+        # Does not return metadata :/
+        s3.upload_file(fn, "intrans-weather-feed", sname)
         os.unlink(fn)
         return True
     except ClientError as e:

@@ -105,11 +105,11 @@ def upload_s3(fn):
     """Send file to S3 bucket."""
     session = boto3.Session(profile_name="ntrans")
     s3 = session.client("s3")
-    sname = fn.split("/")[1]
-    LOG.debug("Uploading %s to S3 as %s", fn, sname)
+    sname = fn.split("/")[-1]
+    LOG.info("Uploading %s to S3 as %s", fn, sname)
     try:
-        response = s3.upload_file(fn, "intrans-weather-feed", sname)
-        LOG.debug(response)
+        # Does not return any metadata :/
+        s3.upload_file(fn, "intrans-weather-feed", sname)
         return True
     except ClientError as e:
         LOG.error(e)
