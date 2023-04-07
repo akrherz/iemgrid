@@ -33,7 +33,7 @@ from pyiem.datatypes import temperature, speed, distance, direction
 from pyiem.network import Table as NetworkTable
 from pyiem import reference
 import pyiem.mrms as mrms_util
-from pyiem.util import get_dbconn, logger, get_dbconnstr
+from pyiem.util import logger, get_dbconnstr
 
 LOG = logger()
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
