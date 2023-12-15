@@ -1,6 +1,6 @@
 """Mess around with wx grid definitions"""
-import pyiem.reference as reference
 import numpy as np
+import pyiem.reference as reference
 
 with open("weather_data.xml", "w", encoding="ascii") as fh:
     fh.write(

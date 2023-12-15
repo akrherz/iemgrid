@@ -1,6 +1,6 @@
 """Create a baseline XML file that represents the grid definition for work"""
-import pyiem.reference as reference
 import numpy as np
+import pyiem.reference as reference
 
 out = open("weather_grid.xml", "w")
 out.write(
