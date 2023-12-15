@@ -1,21 +1,22 @@
 """Generate forecast grids"""
-import sys
 import datetime
+import glob
 import os
 import socket
-import glob
+import sys
 
-import requests
-import numpy as np
-import pytz
-from scipy.interpolate import NearestNDInterpolator
-import pygrib
 import boto3
+import numpy as np
+import pygrib
+import pytz
+import requests
 from botocore.exceptions import ClientError
 from pyiem import reference
-from pyiem.datatypes import temperature, humidity, speed
+from pyiem.datatypes import humidity, speed, temperature
 from pyiem.meteorology import dewpoint, drct
+from pyiem.reference import ISO8601
 from pyiem.util import exponential_backoff, logger, utc
+from scipy.interpolate import NearestNDInterpolator
 
 LOG = logger()
 TMP = "/mesonet/tmp"
@@ -159,7 +160,7 @@ def write_header(valid):
     """
         % (
             valid.strftime("%Y-%m-%d"),
-            valid.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            valid.strftime(ISO8601),
             PROGRAM_VERSION,
             socket.gethostname(),
         )

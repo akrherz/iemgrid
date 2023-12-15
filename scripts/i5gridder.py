@@ -11,29 +11,29 @@
   [o] "snwd"     Snow Depth would be once per day
   [o] "pcpn"     Precipitation
 """
-import sys
 import datetime
+import gzip
 import os
 import socket
-import gzip
+import sys
 import tempfile
 
-import pygrib
+import boto3
 import numpy as np
+import pygrib
+import pyiem.mrms as mrms_util
 import pytz
-from pandas.io.sql import read_sql
-from scipy.interpolate import NearestNDInterpolator
+from botocore.exceptions import ClientError
 from geopandas import GeoDataFrame
+from pandas.io.sql import read_sql
+from pyiem import meteorology, reference
+from pyiem.datatypes import direction, distance, speed, temperature
+from pyiem.network import Table as NetworkTable
+from pyiem.reference import ISO8601
+from pyiem.util import get_dbconnstr, logger
 from rasterio import features
 from rasterio.transform import Affine
-import boto3
-from botocore.exceptions import ClientError
-from pyiem import meteorology
-from pyiem.datatypes import temperature, speed, distance, direction
-from pyiem.network import Table as NetworkTable
-from pyiem import reference
-import pyiem.mrms as mrms_util
-from pyiem.util import logger, get_dbconnstr
+from scipy.interpolate import NearestNDInterpolator
 
 LOG = logger()
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
@@ -128,7 +128,7 @@ def write_grids(grids, valid, iarchive):
     "data": [
     """
         % (
-            valid.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            valid.strftime(ISO8601),
             PROGRAM_VERSION,
             socket.gethostname(),
         )
