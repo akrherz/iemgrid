@@ -27,11 +27,12 @@
 11:Total Precipitation:kg m**-2 (accum):lambert:surface:level 0:
     fcst time 0 hrs (accum):from 201512311800
 """
-import pygrib
 import glob
 import os
-import sys
 import subprocess
+import sys
+
+import pygrib
 
 WANT = [
     "10 metre U wind component",
