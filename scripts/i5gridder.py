@@ -1,16 +1,17 @@
 """The wx gridder!
-  [o] "wawa"     Gridded NWS Watch Warning Advisory codes
-  [o] "ptype"    Precip type (int flag) -> MRMS
-  [o] "tmpc"     2m Air Temperature
-  [o] "dwpc"     2m Dew Point
-  [o] "smps"     10m Wind Speed
-  [o] "drct"     10m Wind Direction (no u/v components)
-  [o] "vsby"     Visibility, understanding that I can't go down below 1/8 mile
-  [o] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
-  [o] "srad"     Solar Radiation (2014 onward)
-  [o] "snwd"     Snow Depth would be once per day
-  [o] "pcpn"     Precipitation
+[o] "wawa"     Gridded NWS Watch Warning Advisory codes
+[o] "ptype"    Precip type (int flag) -> MRMS
+[o] "tmpc"     2m Air Temperature
+[o] "dwpc"     2m Dew Point
+[o] "smps"     10m Wind Speed
+[o] "drct"     10m Wind Direction (no u/v components)
+[o] "vsby"     Visibility, understanding that I can't go down below 1/8 mile
+[o] "roadtmpc" Pavement Temp, very crude regridding of RWIS data
+[o] "srad"     Solar Radiation (2014 onward)
+[o] "snwd"     Snow Depth would be once per day
+[o] "pcpn"     Precipitation
 """
+
 import datetime
 import gzip
 import os
