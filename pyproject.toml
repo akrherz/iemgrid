@@ -3,6 +3,11 @@ filterwarnings = ["ignore:numpy.ndarray size changed:RuntimeWarning"]
 
 [tool.ruff]
 line-length = 79
-lint.select = ["E", "F", "I"]
 target-version = "py39"
 
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+]
