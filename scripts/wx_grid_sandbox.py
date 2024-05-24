@@ -20,10 +20,10 @@ with open("weather_data.xml", "w", encoding="ascii") as fh:
     """
     )
     i = 1
-    for rownum, lat in enumerate(
+    for _rownum, _lat in enumerate(
         np.arange(reference.IA_SOUTH, reference.IA_NORTH, 0.01)
     ):
-        for colnum, lon in enumerate(
+        for _colnum, _lon in enumerate(
             np.arange(reference.IA_WEST, reference.IA_EAST, 0.01)
         ):
             fh.write(f'<cell gid="{i}">32.2</cell>\n')
@@ -38,10 +38,10 @@ with open("weather_data.xml", "w", encoding="ascii") as fh:
     )
 
     i = 1
-    for rownum, lat in enumerate(
+    for _rownum, _lat in enumerate(
         np.arange(reference.IA_SOUTH, reference.IA_NORTH, 0.01)
     ):
-        for colnum, lon in enumerate(
+        for _colnum, _lon in enumerate(
             np.arange(reference.IA_WEST, reference.IA_EAST, 0.01)
         ):
             fh.write(f'<cell gid="{i}">32.2</cell>\n')
