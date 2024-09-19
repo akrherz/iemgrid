@@ -50,7 +50,6 @@ def process(fn):
     """Process a grib file into a smaller, grib file..."""
 
     # nam_218_20151231_1800_000.grb2
-    grbs = pygrib.open(fn)
     (_, _, yyyymmdd, hhmi, hhh) = fn.split(".")[0].split("_")
     if int(hhh) % 3 != 0:
         os.unlink(fn)
@@ -65,25 +64,24 @@ def process(fn):
     if not os.path.isdir(newdir):
         os.makedirs(newdir)
     # 201611101200F003.grib2
-    print("%s -> %s %s" % (fn, newdir, newfn))
-    o = open("%s/%s" % (newdir, newfn), "wb")
-    for grb in grbs:
-        if grb.name in WANT:
-            if grb.level == WANTLVL[WANT.index(grb.name)]:
+    print(f"{fn} -> {newdir} {newfn}")
+    with open("%s/%s" % (newdir, newfn), "wb") as o, pygrib.open(fn) as grbs:
+        for grb in grbs:
+            if grb.name in WANT and grb.level == WANTLVL[WANT.index(grb.name)]:
                 o.write(grb.tostring())
-    o.close()
     os.unlink(fn)
 
 
 def dodir(mydir):
     os.chdir(mydir)
     for tarfn in glob.glob("*.tar"):
-        subprocess.call("tar -xf %s" % (tarfn,), shell=True)
+        subprocess.call(["tar", "-xf", tarfn])
         for grib2fn in glob.glob("*.grb2"):
             process(grib2fn)
 
 
 def main(argv):
+    """Go Main Go"""
     dodir(argv[1])
 
 
