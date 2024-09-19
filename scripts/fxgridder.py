@@ -16,7 +16,7 @@ from pyiem import reference
 from pyiem.datatypes import humidity, speed, temperature
 from pyiem.meteorology import dewpoint, drct
 from pyiem.reference import ISO8601
-from pyiem.util import exponential_backoff, logger, utc
+from pyiem.util import exponential_backoff, logger
 from scipy.interpolate import NearestNDInterpolator
 
 LOG = logger()
@@ -46,9 +46,8 @@ def dl(valid):
         if r is None or r.status_code != 200:
             print("fxgridder dl error for: %s" % (uri,))
             continue
-        o = open(fn, "wb")
-        o.write(r.content)
-        o.close()
+        with open(fn, "wb") as o:
+            o.write(r.content)
 
 
 def write_grids(fp, valid, fhour):
@@ -226,8 +225,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv)
-
-
-def test_upload():
-    """Test our upload."""
-    assert upload_s3(utc(2021, 7, 6))

@@ -66,24 +66,24 @@ def process(fn):
         os.makedirs(newdir)
     # 201611101200F003.grib2
     print("%s -> %s %s" % (fn, newdir, newfn))
-    o = open("%s/%s" % (newdir, newfn), "wb")
-    for grb in grbs:
-        if grb.name in WANT:
-            if grb.level == WANTLVL[WANT.index(grb.name)]:
-                o.write(grb.tostring())
-    o.close()
+    with open("%s/%s" % (newdir, newfn), "wb") as o:
+        for grb in grbs:
+            if grb.name in WANT:
+                if grb.level == WANTLVL[WANT.index(grb.name)]:
+                    o.write(grb.tostring())
     os.unlink(fn)
 
 
 def dodir(mydir):
     os.chdir(mydir)
     for tarfn in glob.glob("*.tar"):
-        subprocess.call("tar -xf %s" % (tarfn,), shell=True)
+        subprocess.call(["tar", "-xf", tarfn])
         for grib2fn in glob.glob("*.grb2"):
             process(grib2fn)
 
 
 def main(argv):
+    """Go Main Go"""
     dodir(argv[1])
 
 
