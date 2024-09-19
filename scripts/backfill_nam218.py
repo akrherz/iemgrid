@@ -50,7 +50,6 @@ def process(fn):
     """Process a grib file into a smaller, grib file..."""
 
     # nam_218_20151231_1800_000.grb2
-    grbs = pygrib.open(fn)
     (_, _, yyyymmdd, hhmi, hhh) = fn.split(".")[0].split("_")
     if int(hhh) % 3 != 0:
         os.unlink(fn)
@@ -65,12 +64,11 @@ def process(fn):
     if not os.path.isdir(newdir):
         os.makedirs(newdir)
     # 201611101200F003.grib2
-    print("%s -> %s %s" % (fn, newdir, newfn))
-    with open("%s/%s" % (newdir, newfn), "wb") as o:
+    print(f"{fn} -> {newdir} {newfn}")
+    with open("%s/%s" % (newdir, newfn), "wb") as o, pygrib.open(fn) as grbs:
         for grb in grbs:
-            if grb.name in WANT:
-                if grb.level == WANTLVL[WANT.index(grb.name)]:
-                    o.write(grb.tostring())
+            if grb.name in WANT and grb.level == WANTLVL[WANT.index(grb.name)]:
+                o.write(grb.tostring())
     os.unlink(fn)
 
 
