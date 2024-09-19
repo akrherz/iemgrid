@@ -21,17 +21,18 @@ import tempfile
 
 import boto3
 import numpy as np
+import pandas as pd
 import pygrib
 import pyiem.mrms as mrms_util
 import pytz
 from botocore.exceptions import ClientError
 from geopandas import GeoDataFrame
-from pandas.io.sql import read_sql
 from pyiem import meteorology, reference
+from pyiem.database import get_sqlalchemy_conn
 from pyiem.datatypes import direction, distance, speed, temperature
 from pyiem.network import Table as NetworkTable
 from pyiem.reference import ISO8601
-from pyiem.util import get_dbconnstr, logger
+from pyiem.util import logger
 from rasterio import features
 from rasterio.transform import Affine
 from scipy.interpolate import NearestNDInterpolator
@@ -119,52 +120,51 @@ def upload_s3(fn):
 
 def write_grids(grids, valid, iarchive):
     """Do the write to disk"""
-    fn = "/tmp/wx_%s.json" % (valid.strftime("%Y%m%d%H%M"),)
-    out = open(fn, "w")
-    out.write(
-        """{"time": "%s",
-    "type": "analysis",
-    "revision": "%s",
-    "hostname": "%s",
-    "data": [
-    """
-        % (
-            valid.strftime(ISO8601),
-            PROGRAM_VERSION,
-            socket.gethostname(),
-        )
-    )
-    fmt = (
-        '{"gid": %s, "tmpc": %.2f, "wawa": %s, "ptype": %i, "dwpc": %.2f, '
-        '"smps": %.1f, "drct": %i, "vsby": %.3f, "roadtmpc": %.2f,'
-        '"srad": %.2f, "snwd": %.2f, "pcpn": %.2f}'
-    )
-    i = 1
-    ar = []
-    for row in range(len(YAXIS)):
-        for col in range(len(XAXIS)):
-            a = grids["wawa"][row, col][:-1]
-            ar.append(
-                fmt
-                % (
-                    i,
-                    grids["tmpc"][row, col],
-                    repr(a.split(",")).replace("'", '"'),
-                    grids["ptype"][row, col],
-                    grids["dwpc"][row, col],
-                    grids["smps"][row, col],
-                    grids["drct"][row, col],
-                    grids["vsby"][row, col],
-                    grids["roadtmpc"][row, col],
-                    grids["srad"][row, col],
-                    grids["snwd"][row, col],
-                    grids["pcpn"][row, col],
-                )
+    fn = f"/tmp/wx_{valid:%Y%m%d%H%M}.json"
+    with open(fn, "w") as out:
+        out.write(
+            """{"time": "%s",
+        "type": "analysis",
+        "revision": "%s",
+        "hostname": "%s",
+        "data": [
+        """
+            % (
+                valid.strftime(ISO8601),
+                PROGRAM_VERSION,
+                socket.gethostname(),
             )
-            i += 1
-    out.write(",\n".join(ar))
-    out.write("]}\n")
-    out.close()
+        )
+        fmt = (
+            '{"gid": %s, "tmpc": %.2f, "wawa": %s, "ptype": %i, "dwpc": %.2f, '
+            '"smps": %.1f, "drct": %i, "vsby": %.3f, "roadtmpc": %.2f,'
+            '"srad": %.2f, "snwd": %.2f, "pcpn": %.2f}'
+        )
+        i = 1
+        ar = []
+        for row in range(len(YAXIS)):
+            for col in range(len(XAXIS)):
+                a = grids["wawa"][row, col][:-1]
+                ar.append(
+                    fmt
+                    % (
+                        i,
+                        grids["tmpc"][row, col],
+                        repr(a.split(",")).replace("'", '"'),
+                        grids["ptype"][row, col],
+                        grids["dwpc"][row, col],
+                        grids["smps"][row, col],
+                        grids["drct"][row, col],
+                        grids["vsby"][row, col],
+                        grids["roadtmpc"][row, col],
+                        grids["srad"][row, col],
+                        grids["snwd"][row, col],
+                        grids["pcpn"][row, col],
+                    )
+                )
+                i += 1
+        out.write(",\n".join(ar))
+        out.write("]}\n")
     if upload_s3(fn):
         os.unlink(fn)
 
@@ -188,19 +188,18 @@ def transform_from_corner(ulx, uly, dx, dy):
 def wwa(grids, valid, iarchive):
     """An attempt at rasterizing the WWA"""
     table = "warnings_%s" % (valid.year,)
-    df = GeoDataFrame.from_postgis(
-        """
+    with get_sqlalchemy_conn("postgis") as conn:
+        df = GeoDataFrame.from_postgis(
+            f"""
         SELECT geom as geom, phenomena ||'.'|| significance as code, w.ugc from
-        """
-        + table
-        + """ w JOIN ugcs u on (w.gid = u.gid) WHERE
+        {table} w JOIN ugcs u on (w.gid = u.gid) WHERE
         issue < %s and expire > %s
         and w.wfo in ('FSD', 'ARX', 'DVN', 'DMX', 'EAX', 'FSD', 'OAX', 'MPX')
-    """,
-        get_dbconnstr("postgis"),
-        params=(valid, valid),
-        index_col=None,
-    )
+        """,
+            conn,
+            params=(valid, valid),
+            index_col=None,
+        )
     transform = transform_from_corner(
         reference.IA_WEST, reference.IA_NORTH, 0.01, 0.01
     )
@@ -224,20 +223,21 @@ def wwa(grids, valid, iarchive):
 
 def snowd(grids, valid, iarchive):
     """Do the snowdepth grid"""
-    df = read_sql(
-        """
-        SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-        max(snowd) as snow
-        from summary s JOIN stations t on (s.iemid = t.iemid)
-        WHERE s.day in (%s, %s) and
-        t.network in ('IA_COOP', 'MN_COOP', 'WI_COOP', 'IL_COOP',
-        'MO_COOP', 'NE_COOP', 'KS_COOP', 'SD_COOP') and snowd >= 0
-        and snowd < 100 GROUP by lon, lat
-        """,
-        get_dbconnstr("iem"),
-        params=(valid.date(), (valid - datetime.timedelta(days=1)).date()),
-        index_col=None,
-    )
+    with get_sqlalchemy_conn("iem") as conn:
+        df = pd.read_sql(
+            """
+            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+            max(snowd) as snow
+            from summary s JOIN stations t on (s.iemid = t.iemid)
+            WHERE s.day in (%s, %s) and
+            t.network in ('IA_COOP', 'MN_COOP', 'WI_COOP', 'IL_COOP',
+            'MO_COOP', 'NE_COOP', 'KS_COOP', 'SD_COOP') and snowd >= 0
+            and snowd < 100 GROUP by lon, lat
+            """,
+            conn,
+            params=(valid.date(), (valid - datetime.timedelta(days=1)).date()),
+            index_col=None,
+        )
 
     nn = NearestNDInterpolator(
         (df["lon"].values, df["lat"].values),
@@ -261,19 +261,20 @@ def roadtmpc(grids, valid, iarchive):
                 "SD_RWIS",
             ]
         )
-        df = read_sql(
-            """
-            SELECT station, tfs0 as tsf0
-            from alldata WHERE valid >= %s and valid < %s and
-            tfs0 >= -50 and tfs0 < 150
-            """,
-            get_dbconnstr("rwis"),
-            params=(
-                (valid - datetime.timedelta(minutes=30)),
-                (valid + datetime.timedelta(minutes=30)),
-            ),
-            index_col=None,
-        )
+        with get_sqlalchemy_conn("rwis") as conn:
+            df = pd.read_sql(
+                """
+                SELECT station, tfs0 as tsf0
+                from alldata WHERE valid >= %s and valid < %s and
+                tfs0 >= -50 and tfs0 < 150
+                """,
+                conn,
+                params=(
+                    (valid - datetime.timedelta(minutes=30)),
+                    (valid + datetime.timedelta(minutes=30)),
+                ),
+                index_col=None,
+            )
         df["lat"] = df["station"].apply(
             lambda x: nt.sts.get(x, {}).get("lat", 0)
         )
@@ -281,19 +282,20 @@ def roadtmpc(grids, valid, iarchive):
             lambda x: nt.sts.get(x, {}).get("lon", 0)
         )
     else:
-        df = read_sql(
-            """
-            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-            tsf0
-            from current c JOIN stations t on (c.iemid = t.iemid)
-            WHERE c.valid > now() - '2 hours'::interval and
-            t.network in ('IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS',
-            'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
-            and tsf0 < 150
-            """,
-            get_dbconnstr("iem"),
-            index_col=None,
-        )
+        with get_sqlalchemy_conn("iem") as conn:
+            df = pd.read_sql(
+                """
+                SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+                tsf0
+                from current c JOIN stations t on (c.iemid = t.iemid)
+                WHERE c.valid > now() - '2 hours'::interval and
+                t.network in ('IA_RWIS', 'MN_RWIS', 'WI_RWIS', 'IL_RWIS',
+                'MO_RWIS', 'KS_RWIS', 'NE_RWIS', 'SD_RWIS') and tsf0 >= -50
+                and tsf0 < 150
+                """,
+                conn,
+                index_col=None,
+            )
 
     nn = NearestNDInterpolator(
         (df["lon"].values, df["lat"].values),
@@ -305,40 +307,41 @@ def roadtmpc(grids, valid, iarchive):
 def srad(grids, valid, iarchive):
     """Solar Radiation (W m**-2)"""
     if iarchive:
-        pgconn = get_dbconnstr("isuag")
         # We have to split based on if we are prior to 1 Jan 2014
         if valid.year < 2014:
             nt = NetworkTable("ISUAG")
             # c800 is kilo calorie per meter squared per hour
-            df = read_sql(
-                """
-                SELECT station, c800 * 1.162 as srad
-                from hourly
-                WHERE valid >= %s and valid < %s and c800 >= 0
-                """,
-                pgconn,
-                params=(
-                    (valid - datetime.timedelta(minutes=30)),
-                    (valid + datetime.timedelta(minutes=30)),
-                ),
-                index_col=None,
-            )
+            with get_sqlalchemy_conn("isuag") as conn:
+                df = pd.read_sql(
+                    """
+                    SELECT station, c800 * 1.162 as srad
+                    from hourly
+                    WHERE valid >= %s and valid < %s and c800 >= 0
+                    """,
+                    conn,
+                    params=(
+                        (valid - datetime.timedelta(minutes=30)),
+                        (valid + datetime.timedelta(minutes=30)),
+                    ),
+                    index_col=None,
+                )
         else:
             nt = NetworkTable("ISUSM")
             # Not fully certain on this unit, but it appears to be ok
-            df = read_sql(
-                """
-                SELECT station, slrkj_tot_qc * 1000. / 3600. as srad
-                from sm_hourly
-                WHERE valid >= %s and valid < %s and slrkj_tot_qc >= 0
-                """,
-                pgconn,
-                params=(
-                    (valid - datetime.timedelta(minutes=30)),
-                    (valid + datetime.timedelta(minutes=30)),
-                ),
-                index_col=None,
-            )
+            with get_sqlalchemy_conn("isuag") as pgconn:
+                df = pd.read_sql(
+                    """
+                    SELECT station, slrkj_tot_qc * 1000. / 3600. as srad
+                    from sm_hourly
+                    WHERE valid >= %s and valid < %s and slrkj_tot_qc >= 0
+                    """,
+                    pgconn,
+                    params=(
+                        (valid - datetime.timedelta(minutes=30)),
+                        (valid + datetime.timedelta(minutes=30)),
+                    ),
+                    index_col=None,
+                )
         df["lat"] = df["station"].apply(
             lambda x: nt.sts.get(x, {}).get("lat", 0)
         )
@@ -346,17 +349,18 @@ def srad(grids, valid, iarchive):
             lambda x: nt.sts.get(x, {}).get("lon", 0)
         )
     else:
-        df = read_sql(
-            """
-            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-            srad
-            from current c JOIN stations t on (c.iemid = t.iemid)
-            WHERE c.valid > now() - '2 hours'::interval and
-            t.network in ('ISUSM') and srad >= 0 and srad != 'NaN'
-            """,
-            get_dbconnstr("iem"),
-            index_col=None,
-        )
+        with get_sqlalchemy_conn("iem") as conn:
+            df = pd.read_sql(
+                """
+                SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+                srad
+                from current c JOIN stations t on (c.iemid = t.iemid)
+                WHERE c.valid > now() - '2 hours'::interval and
+                t.network in ('ISUSM') and srad >= 0 and srad != 'NaN'
+                """,
+                conn,
+                index_col=None,
+            )
     if len(df.index) < 5:
         print(
             (
@@ -375,40 +379,42 @@ def srad(grids, valid, iarchive):
 def simple(grids, valid, iarchive):
     """Simple gridder (stub for now)"""
     if iarchive:
-        df = read_sql(
-            """
-            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-            tmpf, dwpf, sknt, drct, vsby
-            from alldata c JOIN stations t on
-            (c.station = t.id)
-            WHERE c.valid >= %s and c.valid < %s and
-            t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
-            'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
-            and drct is not null and tmpf is not null and dwpf is not null
-            and vsby is not null
-            """,
-            get_dbconnstr("asos"),
-            params=(
-                (valid - datetime.timedelta(minutes=30)),
-                (valid + datetime.timedelta(minutes=30)),
-            ),
-            index_col=None,
-        )
+        with get_sqlalchemy_conn("asos") as conn:
+            df = pd.read_sql(
+                """
+    SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+    tmpf, dwpf, sknt, drct, vsby
+    from alldata c JOIN stations t on
+    (c.station = t.id)
+    WHERE c.valid >= %s and c.valid < %s and
+    t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
+    'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
+    and drct is not null and tmpf is not null and dwpf is not null
+    and vsby is not null
+                """,
+                conn,
+                params=(
+                    (valid - datetime.timedelta(minutes=30)),
+                    (valid + datetime.timedelta(minutes=30)),
+                ),
+                index_col=None,
+            )
     else:
-        df = read_sql(
-            """
-            SELECT ST_x(geom) as lon, ST_y(geom) as lat,
-            tmpf, dwpf, sknt, drct, vsby
-            from current c JOIN stations t on (c.iemid = t.iemid)
-            WHERE c.valid > now() - '1 hour'::interval and
-            t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
-            'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
-            and drct is not null and tmpf is not null and dwpf is not null
-            and vsby is not null
-            """,
-            get_dbconnstr("iem"),
-            index_col=None,
-        )
+        with get_sqlalchemy_conn("iem") as conn:
+            df = pd.read_sql(
+                """
+    SELECT ST_x(geom) as lon, ST_y(geom) as lat,
+    tmpf, dwpf, sknt, drct, vsby
+    from current c JOIN stations t on (c.iemid = t.iemid)
+    WHERE c.valid > now() - '1 hour'::interval and
+    t.network in ('IA_ASOS', 'AWOS', 'MN_ASOS', 'WI_ASOS', 'IL_ASOS',
+    'MO_ASOS', 'NE_ASOS', 'KS_ASOS', 'SD_ASOS') and sknt is not null
+    and drct is not null and tmpf is not null and dwpf is not null
+    and vsby is not null
+                """,
+                conn,
+                index_col=None,
+            )
 
     if len(df.index) < 5:
         print(
@@ -562,11 +568,10 @@ def pcpn(grids, valid, iarchive):
         return
     fp = gzip.GzipFile(fn, "rb")
     (_, tmpfn) = tempfile.mkstemp()
-    tmpfp = open(tmpfn, "wb")
-    tmpfp.write(fp.read())
-    tmpfp.close()
-    grbs = pygrib.open(tmpfn)
-    values = grbs[1]["values"]
+    with open(tmpfn, "wb") as tmpfp:
+        tmpfp.write(fp.read())
+    with pygrib.open(tmpfn) as grbs:
+        values = grbs[1]["values"]
     # just set -3 (no coverage) to 0 for now
     values = np.where(values < 0, 0, values)
     os.unlink(fn)
