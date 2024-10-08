@@ -70,8 +70,8 @@ def write_grids(fp, valid, fhour):
             (G["LONS"].flatten(), G["LATS"].flatten()), vals.flatten()
         )
         d["tmpc"] = nn(XI, YI)
-        if "Relative humidity" in grids:
-            g = grids["Relative humidity"]
+        if "2 metre relative humidity" in grids:
+            g = grids["2 metre relative humidity"]
             vals = g.values
             nn = NearestNDInterpolator(
                 (G["LONS"].flatten(), G["LATS"].flatten()), vals.flatten()
