@@ -12,12 +12,12 @@
 [o] "pcpn"     Precipitation
 """
 
-import datetime
 import gzip
 import os
 import socket
 import sys
 import tempfile
+from datetime import datetime, timedelta
 
 import boto3
 import numpy as np
@@ -235,7 +235,7 @@ def snowd(grids, valid, iarchive):
             and snowd < 100 GROUP by lon, lat
             """,
             conn,
-            params=(valid.date(), (valid - datetime.timedelta(days=1)).date()),
+            params=(valid.date(), (valid - timedelta(days=1)).date()),
             index_col=None,
         )
 
@@ -270,8 +270,8 @@ def roadtmpc(grids, valid, iarchive):
                 """,
                 conn,
                 params=(
-                    (valid - datetime.timedelta(minutes=30)),
-                    (valid + datetime.timedelta(minutes=30)),
+                    (valid - timedelta(minutes=30)),
+                    (valid + timedelta(minutes=30)),
                 ),
                 index_col=None,
             )
@@ -320,8 +320,8 @@ def srad(grids, valid, iarchive):
                     """,
                     conn,
                     params=(
-                        (valid - datetime.timedelta(minutes=30)),
-                        (valid + datetime.timedelta(minutes=30)),
+                        (valid - timedelta(minutes=30)),
+                        (valid + timedelta(minutes=30)),
                     ),
                     index_col=None,
                 )
@@ -337,8 +337,8 @@ def srad(grids, valid, iarchive):
                     """,
                     pgconn,
                     params=(
-                        (valid - datetime.timedelta(minutes=30)),
-                        (valid + datetime.timedelta(minutes=30)),
+                        (valid - timedelta(minutes=30)),
+                        (valid + timedelta(minutes=30)),
                     ),
                     index_col=None,
                 )
@@ -394,8 +394,8 @@ def simple(grids, valid, iarchive):
                 """,
                 conn,
                 params=(
-                    (valid - datetime.timedelta(minutes=30)),
-                    (valid + datetime.timedelta(minutes=30)),
+                    (valid - timedelta(minutes=30)),
+                    (valid + timedelta(minutes=30)),
                 ),
                 index_col=None,
             )
@@ -488,7 +488,7 @@ def ptype(grids, valid, iarchive):
     91    tropical/stratiform rain mix
     96    tropical/convective rain mix
     """
-    floor = datetime.datetime(2016, 1, 21)
+    floor = datetime(2016, 1, 21)
     floor = floor.replace(tzinfo=pytz.timezone("UTC"))
     if valid < floor:
         # Use hack for now
@@ -498,7 +498,7 @@ def ptype(grids, valid, iarchive):
     fn = None
     i = 0
     while i < 10:
-        ts = valid - datetime.timedelta(minutes=i)
+        ts = valid - timedelta(minutes=i)
         if ts.minute % 2 == 0:
             testfn = mrms_util.fetch("PrecipFlag", ts, tmpdir="/tmp")
             if testfn is not None:
@@ -511,9 +511,8 @@ def ptype(grids, valid, iarchive):
 
     fp = gzip.GzipFile(fn, "rb")
     (_, tmpfn) = tempfile.mkstemp()
-    tmpfp = open(tmpfn, "wb")
-    tmpfp.write(fp.read())
-    tmpfp.close()
+    with open(tmpfn, "wb") as tmpfp:
+        tmpfp.write(fp.read())
     grbs = pygrib.open(tmpfn)
     if grbs.messages < 1:
         print("i5gridder %s has %s messages?" % (tmpfn, grbs.messages))
@@ -532,13 +531,13 @@ def ptype(grids, valid, iarchive):
     grids["ptype"] = np.flipud(grb["values"][top:bottom, left:right])
 
 
-def pcpn(grids, valid, iarchive):
+def pcpn(grids, valid, _iarchive):
     """Attempt to use MRMS or stage IV pcpn here"""
-    floor = datetime.datetime(2014, 11, 1)
+    floor = datetime(2014, 11, 1)
     floor = floor.replace(tzinfo=pytz.timezone("UTC"))
     if valid < floor:
         # Use stageIV
-        ts = (valid + datetime.timedelta(minutes=60)).replace(minute=0)
+        ts = (valid + timedelta(minutes=60)).replace(minute=0)
         gribfn = ts.strftime(
             ("/mesonet/ARCHIVE/data/%Y/%m/%d/stage4/ST4." "%Y%m%d%H.01h.grib")
         )
@@ -556,7 +555,7 @@ def pcpn(grids, valid, iarchive):
     fn = None
     i = 0
     while i < 10:
-        ts = valid - datetime.timedelta(minutes=i)
+        ts = valid - timedelta(minutes=i)
         if ts.minute % 2 == 0:
             testfn = mrms_util.fetch("PrecipRate", ts, tmpdir="/tmp")
             if testfn is not None:
@@ -593,7 +592,7 @@ def pcpn(grids, valid, iarchive):
 def run(valid):
     """Run for this timestamp (UTC)"""
     grids = init_grids()
-    floor = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+    floor = datetime.utcnow() - timedelta(hours=1)
     floor = floor.replace(tzinfo=pytz.timezone("UTC"))
     iarchive = valid < floor
     simple(grids, valid, iarchive)
@@ -615,7 +614,7 @@ def main(argv):
     if len(argv) != 6:
         print("Usage: python i5gridder.py YYYY mm dd HH MI")
         return
-    valid = datetime.datetime(
+    valid = datetime(
         int(argv[1]), int(argv[2]), int(argv[3]), int(argv[4]), int(argv[5])
     )
     valid = valid.replace(tzinfo=pytz.timezone("UTC"))
