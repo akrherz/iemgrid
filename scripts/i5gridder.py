@@ -539,7 +539,7 @@ def pcpn(grids, valid, _iarchive):
         # Use stageIV
         ts = (valid + timedelta(minutes=60)).replace(minute=0)
         gribfn = ts.strftime(
-            ("/mesonet/ARCHIVE/data/%Y/%m/%d/stage4/ST4." "%Y%m%d%H.01h.grib")
+            ("/mesonet/ARCHIVE/data/%Y/%m/%d/stage4/ST4.%Y%m%d%H.01h.grib")
         )
         if not os.path.isfile(gribfn):
             return
