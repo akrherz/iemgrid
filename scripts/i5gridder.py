@@ -17,14 +17,13 @@ import os
 import socket
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import boto3
 import numpy as np
 import pandas as pd
 import pygrib
 import pyiem.mrms as mrms_util
-import pytz
 from botocore.exceptions import ClientError
 from geopandas import GeoDataFrame
 from pyiem import meteorology, reference
@@ -207,7 +206,7 @@ def wwa(grids, valid, iarchive):
     for vtec in df["code"].unique():
         df2 = df[df["code"] == vtec]
         shapes = ((geom, value) for geom, value in zip(df2.geometry, df2.i))
-        stradd = "%s," % (vtec,)
+        stradd = f"{vtec},"
         arr = features.rasterize(
             shapes=shapes,
             fill=0,
@@ -489,7 +488,7 @@ def ptype(grids, valid, iarchive):
     96    tropical/convective rain mix
     """
     floor = datetime(2016, 1, 21)
-    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    floor = floor.replace(tzinfo=timezone.utc)
     if valid < floor:
         # Use hack for now
         grids["ptype"] = np.where(grids["tmpc"] < 0, 3, 10)
@@ -534,7 +533,7 @@ def ptype(grids, valid, iarchive):
 def pcpn(grids, valid, _iarchive):
     """Attempt to use MRMS or stage IV pcpn here"""
     floor = datetime(2014, 11, 1)
-    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    floor = floor.replace(tzinfo=timezone.utc)
     if valid < floor:
         # Use stageIV
         ts = (valid + timedelta(minutes=60)).replace(minute=0)
@@ -592,8 +591,8 @@ def pcpn(grids, valid, _iarchive):
 def run(valid):
     """Run for this timestamp (UTC)"""
     grids = init_grids()
-    floor = datetime.utcnow() - timedelta(hours=1)
-    floor = floor.replace(tzinfo=pytz.timezone("UTC"))
+    floor = datetime.now(timezone.utc) - timedelta(hours=1)
+    floor = floor.replace(tzinfo=timezone.utc)
     iarchive = valid < floor
     simple(grids, valid, iarchive)
     wwa(grids, valid, iarchive)
@@ -615,9 +614,13 @@ def main(argv):
         print("Usage: python i5gridder.py YYYY mm dd HH MI")
         return
     valid = datetime(
-        int(argv[1]), int(argv[2]), int(argv[3]), int(argv[4]), int(argv[5])
+        int(argv[1]),
+        int(argv[2]),
+        int(argv[3]),
+        int(argv[4]),
+        int(argv[5]),
+        tzinfo=timezone.utc,
     )
-    valid = valid.replace(tzinfo=pytz.timezone("UTC"))
     run(valid)
 
 
