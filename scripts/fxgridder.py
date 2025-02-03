@@ -1,15 +1,14 @@
 """Generate forecast grids"""
 
-import datetime
 import glob
 import os
 import socket
 import sys
+from datetime import datetime, timezone
 
 import boto3
 import numpy as np
 import pygrib
-import pytz
 import requests
 from botocore.exceptions import ClientError
 from pyiem import reference
@@ -146,10 +145,8 @@ def write_grids(fp, valid, fhour):
     fp.write("]}%s\n" % ("," if fhour != 84 else "",))
 
 
-def write_header(valid):
+def write_header(fp, valid):
     """Initialize the file"""
-    fn = "%s/fx_%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
-    fp = open(fn, "w")
     fp.write(
         """{"Date": "%s",
         "model_init_time": "%s",
@@ -165,16 +162,13 @@ def write_header(valid):
             socket.gethostname(),
         )
     )
-    return fp
 
 
 def write_footer(fp):
     fp.write("]}")
-    fp.close()
 
 
-def upload_s3(valid):
-    fn = "%s/fx_%s.json" % (TMP, valid.strftime("%Y%m%d%H%M"))
+def upload_s3(fn):
     session = boto3.Session(profile_name="ntrans")
     s3 = session.client("s3")
     sname = fn.split("/")[-1]
@@ -200,14 +194,16 @@ def run(valid):
     # 1. Download NAM grib files from mtarchive
     dl(valid)
     # 2. create header
-    fp = write_header(valid)
-    # 3. write grids
-    for fhour in range(0, 85, 3):
-        write_grids(fp, valid, fhour)
-    # 4. finalize file
-    write_footer(fp)
+    fn = f"{TMP}/fx_{valid:%Y%n%d%H%M}.json"
+    with open(fn, "w") as fp:
+        write_header(fp, valid)
+        # 3. write grids
+        for fhour in range(0, 85, 3):
+            write_grids(fp, valid, fhour)
+        # 4. finalize file
+        write_footer(fp)
     # 5. save to shared drive
-    upload_s3(valid)
+    upload_s3(fn)
     # 6. cleanup cached gribs
     cleanup(valid)
 
@@ -216,10 +212,14 @@ def main(argv):
     if len(argv) != 5:
         print("Usage: python fxgridder.py YYYY mm dd HH")
         return
-    valid = datetime.datetime(
-        int(argv[1]), int(argv[2]), int(argv[3]), int(argv[4]), 0
+    valid = datetime(
+        int(argv[1]),
+        int(argv[2]),
+        int(argv[3]),
+        int(argv[4]),
+        0,
+        tzinfo=timezone.utc,
     )
-    valid = valid.replace(tzinfo=pytz.UTC)
     run(valid)
 
 
