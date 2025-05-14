@@ -208,7 +208,10 @@ def wwa(grids, valid, _iarchive):
     df["i"] = 1
     for vtec in df["code"].unique():
         df2 = df[df["code"] == vtec]
-        shapes = ((geom, value) for geom, value in zip(df2.geometry, df2.i))
+        shapes = (
+            (geom, value)
+            for geom, value in zip(df2.geometry, df2.i, strict=False)
+        )
         stradd = f"{vtec},"
         arr = features.rasterize(
             shapes=shapes,
