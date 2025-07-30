@@ -61,6 +61,7 @@ WWA_CODES = {
     "EC.W": 50,  # Extreme Cold Warning
     "FA.A": 51,  # Areal Flood Watch
     "EH.W": 52,  # Excessive Heat Warning
+    "XH.W": 52,  # Excessive Heat Warning
     "HT.Y": 53,  # Heat Advisory
     "FZ.W": 54,  # Freeze Warning
     "FR.Y": 55,  # Freeze Advisory

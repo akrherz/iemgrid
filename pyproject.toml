@@ -11,4 +11,5 @@ select = [
     "E",
     "F",
     "I",
+    "RET",  # return
 ]
