@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 import pygrib
 import pyiem.mrms as mrms_util
-from botocore.exceptions import ClientError
 from geopandas import GeoDataFrame
 from pyiem import meteorology, reference
 from pyiem.database import get_sqlalchemy_conn, sql_helper
@@ -113,8 +112,8 @@ def upload_s3(fn):
         # Does not return any metadata :/
         s3.upload_file(fn, "intrans-weather-feed", sname)
         return True
-    except ClientError as e:
-        LOG.error(e)
+    except Exception as exp:
+        LOG.error(exp)
     return False
 
 
