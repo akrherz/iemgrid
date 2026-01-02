@@ -28,7 +28,7 @@ The alerts are presented by a string encoding of the VTEC phenomena and
 significance values.  You can find a lookup table of these in the
 [i5gridder.py code](/scripts/i5gridder.py).  Since multiple alerts can
 be active at the same time, multiple codes can be found as active at one time.
-These are seperated by commas when necessary. 
+These are seperated by commas when necessary.
 
 ### "ptype"
 
@@ -37,7 +37,7 @@ project.  They use the following integer codes to present the state of
 precipitation being estimated by RADAR and model algorithms.
 
 Code | Representation
------|---------------
+---- | --------------
 -3 | no coverage
 0 | no precipitation
 1 | warm stratiform rain
@@ -52,7 +52,6 @@ Code | Representation
 10 | cold stratiform rain
 91 | tropical/stratiform rain mix
 96 | tropical/convective rain mix
-
 
 ### "tmpc"
 
@@ -125,4 +124,3 @@ liquid equivelent.  So snow and sleet are melted to derive this value. Units
 are millimeters accumulation over those 5 minutes.
 
 The data source is the NWS MRMS Project.
-
