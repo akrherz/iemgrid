@@ -194,7 +194,7 @@ def run(valid):
     # 1. Download NAM grib files from mtarchive
     dl(valid)
     # 2. create header
-    fn = f"{TMP}/fx_{valid:%Y%n%d%H%M}.json"
+    fn = f"{TMP}/fx_{valid:%Y%m%d%H%M}.json"
     with open(fn, "w") as fp:
         write_header(fp, valid)
         # 3. write grids
