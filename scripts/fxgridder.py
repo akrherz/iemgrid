@@ -32,22 +32,15 @@ def get_local_gribfn(valid: datetime, fhour: int) -> str:
     return f"{TMP}/{valid:%Y%m%d%H%M}F{fhour:03.0f}.grib2"
 
 
-def dl(valid: datetime, fhour: int):
-    """Fetch the needed Grib messages from AWS."""
-    localfn = get_local_gribfn(valid, fhour)
-    if os.path.isfile(localfn):
-        LOG.info("Skipping %s as already downloaded", localfn)
-        return
-    # Retrieve the idx file as we don't want everything
-    idxfn = (
-        "https://noaa-rrfs-ops-pds.s3.amazonaws.com/"
-        f"rrfs.{valid:%Y%m%d}/{valid:%H}/"
-        f"rrfs.t{valid:%H}z.2dfld.13km.f{fhour:03.0f}.na.grib2.idx"
-    )
+def get_offsets(idxfn: str, fhour: int) -> list[list[int]]:
+    """Compute the offsets for the given index file."""
     resp = exponential_backoff(requests.get, idxfn, timeout=60)
+    if resp is None or resp.status_code != 200:
+        LOG.warning("FATAL dl error for: %s %s", idxfn, resp)
+        sys.exit(3)
     offsets = []
     curval = []
-    quorum = set(["TMP", "RH", "VIS", "UGRD", "VGRD", "APCP"])
+    quorum = {"TMP", "RH", "VIS", "UGRD", "VGRD", "APCP"}
     if fhour == 0:
         quorum.remove("APCP")
     for line in resp.text.splitlines():
@@ -70,11 +63,34 @@ def dl(valid: datetime, fhour: int):
             curval.append(int(tokens[1]) - 1)
             offsets.append(curval)
             curval = []
+    if curval:
+        curval.append(curval[0] + 1e7)  # Assume 10MB is enough
+        offsets.append(curval)
     if quorum:
         LOG.warning(
             "Fatal required Grib messages: %s missing %s", quorum, idxfn
         )
         sys.exit(3)
+    return offsets
+
+
+def dl(valid: datetime, fhour: int):
+    """Fetch the needed Grib messages from AWS."""
+    localfn = get_local_gribfn(valid, fhour)
+    if os.path.isfile(localfn):
+        LOG.info("Skipping %s as already downloaded", localfn)
+        return
+    tmpfn = f"{localfn}.partial"
+    if os.path.isfile(tmpfn):
+        LOG.info("Removing partial download %s", tmpfn)
+        os.remove(tmpfn)
+    # Retrieve the idx file as we don't want everything
+    idxfn = (
+        "https://noaa-rrfs-ops-pds.s3.amazonaws.com/"
+        f"rrfs.{valid:%Y%m%d}/{valid:%H}/"
+        f"rrfs.t{valid:%H}z.2dfld.13km.f{fhour:03.0f}.na.grib2.idx"
+    )
+    offsets = get_offsets(idxfn, fhour)
     gribfn = idxfn.removesuffix(".idx")
     for offset in offsets:
         resp = exponential_backoff(
@@ -86,9 +102,9 @@ def dl(valid: datetime, fhour: int):
         if resp is None or resp.status_code != 206:
             LOG.warning("dl error for: %s %s", gribfn, resp)
             continue
-        print(f"WRITE? {localfn}")
-        with open(localfn, "ab") as o:
+        with open(tmpfn, "ab") as o:
             o.write(resp.content)
+    os.rename(tmpfn, localfn)
 
 
 def write_grids(fp, valid, fhour):
