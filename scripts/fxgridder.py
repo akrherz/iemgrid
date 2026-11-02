@@ -20,41 +20,99 @@ from scipy.interpolate import NearestNDInterpolator
 
 LOG = logger()
 TMP = "/mesonet/tmp"
-PROGRAM_VERSION = "2"
+PROGRAM_VERSION = "20261102.0"
 XAXIS = np.arange(reference.IA_WEST, reference.IA_EAST - 0.01, 0.01)
 YAXIS = np.arange(reference.IA_SOUTH, reference.IA_NORTH - 0.01, 0.01)
 XI, YI = np.meshgrid(XAXIS, YAXIS)
 G = {"LATS": None, "LONS": None}
 
 
-def dl(valid):
-    for fhour in range(0, 85, 3):
-        fn = "%s/%sF%03i.grib2" % (TMP, valid.strftime("%Y%m%d%H%M"), fhour)
-        if os.path.isfile(fn):
+def get_local_gribfn(valid: datetime, fhour: int) -> str:
+    """Figure out the local storage."""
+    return f"{TMP}/{valid:%Y%m%d%H%M}F{fhour:03.0f}.grib2"
+
+
+def get_offsets(idxfn: str, fhour: int) -> list[list[int]]:
+    """Compute the offsets for the given index file."""
+    resp = exponential_backoff(requests.get, idxfn, timeout=60)
+    if resp is None or resp.status_code != 200:
+        LOG.warning("FATAL dl error for: %s %s", idxfn, resp)
+        sys.exit(3)
+    offsets = []
+    curval = []
+    quorum = {"TMP", "RH", "VIS", "UGRD", "VGRD", "APCP"}
+    if fhour == 0:
+        quorum.remove("APCP")
+    for line in resp.text.splitlines():
+        tokens = line.split(":")
+        if len(tokens) < 6:
             continue
-        # Go Fetch it!
-        uri = valid.strftime(
-            (
-                "http://mtarchive.geol.iastate.edu/%Y/%m/%d/"
-                "grib2/ncep/NAM218/%H/%Y%m%d%H%MF"
-                + ("%03i" % (fhour,))
-                + ".grib2"
+        if (
+            (tokens[3] in ["TMP", "RH"] and tokens[4] == "2 m above ground")
+            or (tokens[3] == "VIS" and tokens[4] == "surface")
+            or (
+                tokens[3] in ["UGRD", "VGRD"]
+                and tokens[4] == "10 m above ground"
             )
+            or (tokens[3] == "APCP" and tokens[5].startswith("0-"))
+        ):
+            quorum.remove(tokens[3])
+            if not curval:
+                curval = [int(tokens[1])]
+        elif curval:
+            curval.append(int(tokens[1]) - 1)
+            offsets.append(curval)
+            curval = []
+    if curval:
+        curval.append(curval[0] + 1e7)  # Assume 10MB is enough
+        offsets.append(curval)
+    if quorum:
+        LOG.warning(
+            "Fatal required Grib messages: %s missing %s", quorum, idxfn
         )
-        r = exponential_backoff(requests.get, uri, timeout=60)
-        if r is None or r.status_code != 200:
-            print("fxgridder dl error for: %s" % (uri,))
+        sys.exit(3)
+    return offsets
+
+
+def dl(valid: datetime, fhour: int):
+    """Fetch the needed Grib messages from AWS."""
+    localfn = get_local_gribfn(valid, fhour)
+    if os.path.isfile(localfn):
+        LOG.info("Skipping %s as already downloaded", localfn)
+        return
+    tmpfn = f"{localfn}.partial"
+    if os.path.isfile(tmpfn):
+        LOG.info("Removing partial download %s", tmpfn)
+        os.remove(tmpfn)
+    # Retrieve the idx file as we don't want everything
+    idxfn = (
+        "https://noaa-rrfs-ops-pds.s3.amazonaws.com/"
+        f"rrfs.{valid:%Y%m%d}/{valid:%H}/"
+        f"rrfs.t{valid:%H}z.2dfld.13km.f{fhour:03.0f}.na.grib2.idx"
+    )
+    offsets = get_offsets(idxfn, fhour)
+    gribfn = idxfn.removesuffix(".idx")
+    for offset in offsets:
+        resp = exponential_backoff(
+            requests.get,
+            gribfn,
+            headers={"Range": f"bytes={offset[0]}-{offset[1]}"},
+            timeout=60,
+        )
+        if resp is None or resp.status_code != 206:
+            LOG.warning("dl error for: %s %s", gribfn, resp)
             continue
-        with open(fn, "wb") as o:
-            o.write(r.content)
+        with open(tmpfn, "ab") as o:
+            o.write(resp.content)
+    os.rename(tmpfn, localfn)
 
 
 def write_grids(fp, valid, fhour):
     """Do the write to disk"""
-    gribfn = "%s/%sF%03i.grib2" % (TMP, valid.strftime("%Y%m%d%H%M"), fhour)
+    gribfn = get_local_gribfn(valid, fhour)
     if not os.path.isfile(gribfn):
-        print("Skipping write_grids because of missing fn: %s" % (gribfn,))
-        return
+        LOG.warning("FATAL write_grids missing fn: %s", gribfn)
+        sys.exit(3)
     gribs = pygrib.open(gribfn)
     grids = dict()
     for grib in gribs:
@@ -143,6 +201,7 @@ def write_grids(fp, valid, fhour):
             i += 1
     fp.write(",\n".join(ar))
     fp.write("]}%s\n" % ("," if fhour != 84 else "",))
+    gribs.close()
 
 
 def write_header(fp, valid):
@@ -191,21 +250,20 @@ def cleanup(valid):
 
 def run(valid):
     """Do the work for this valid time"""
-    # 1. Download NAM grib files from mtarchive
-    dl(valid)
     # 2. create header
     fn = f"{TMP}/fx_{valid:%Y%m%d%H%M}.json"
     with open(fn, "w") as fp:
         write_header(fp, valid)
         # 3. write grids
         for fhour in range(0, 85, 3):
+            dl(valid, fhour)
             write_grids(fp, valid, fhour)
         # 4. finalize file
         write_footer(fp)
     # 5. save to shared drive
-    upload_s3(fn)
-    # 6. cleanup cached gribs
-    cleanup(valid)
+    if upload_s3(fn):
+        # 6. cleanup cached gribs
+        cleanup(valid)
 
 
 def main(argv):
